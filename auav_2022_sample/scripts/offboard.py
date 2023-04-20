@@ -4,13 +4,13 @@ import math
 import numpy as np
 from geometry_msgs.msg import PoseStamped, Quaternion, PointStamped
 from mavros_msgs.msg import ExtendedState, State, ParamValue
-from mavros_msgs.srv import ParamGet, ParamSet
+from mavros_msgs.srv import ParamGet, ParamSet, CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 from sensor_msgs.msg import Imu
 from pymavlink import mavutil
 from std_msgs.msg import Header, Bool
 from threading import Thread
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
-
+# 自动起飞: https://docs.px4.io/main/en/ros/mavros_offboard_python.html
 class MavrosOffboardPosctl(object):
 
     def __init__(self):
@@ -34,10 +34,16 @@ class MavrosOffboardPosctl(object):
         try:
             rospy.loginfo("waiting for param get")
             rospy.wait_for_service('mavros/param/get', service_timeout)
+            rospy.loginfo("waiting for cmd arming")
+            rospy.wait_for_service("mavros/cmd/arming", service_timeout)    
+            rospy.loginfo("waiting for set mode")
+            rospy.wait_for_service("mavros/set_mode", service_timeout)
             rospy.loginfo("ROS services are up")
         except rospy.ROSException as e:
             rospy.logerr("failed to connect to services")
 
+        self.set_mode_client = rospy.ServiceProxy("mavros/set_mode", SetMode)
+        self.arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)    
         self.get_param_srv = rospy.ServiceProxy('mavros/param/get', ParamGet)
         self.set_param_srv = rospy.ServiceProxy('mavros/param/set', ParamSet)
 
@@ -236,6 +242,46 @@ class MavrosOffboardPosctl(object):
         if self.pos_thread.is_alive():
             self.pos_thread.join()
 
+    def wait_for_offborad(self):
+        last_req = rospy.Time.now()
+        rate = rospy.Rate(10) # 10 Hz
+        offb_set_mode = SetModeRequest()
+        offb_set_mode.custom_mode = 'OFFBOARD'
+        while not rospy.is_shutdown():
+            if self.state.mode != "OFFBOARD":
+                if (rospy.Time.now() - last_req) > rospy.Duration(5.0):
+                    rospy.loginfo_throttle(10, "waiting for offborad") 
+                    continue
+                if(self.set_mode_client.call(offb_set_mode).mode_sent == True):
+                    rospy.loginfo("offboard mode confirmed")
+                    break
+                else:
+                    rospy.loginfo("set mode failed, retry")
+            
+            rate.sleep()
+            last_req = rospy.Time.now()
+    
+    def wait_for_takeoff(self):
+        last_req = rospy.Time.now()
+        rate = rospy.Rate(10) # 10 Hz            
+        arm_cmd = CommandBoolRequest()
+        arm_cmd.value = True
+        while not rospy.is_shutdown(): 
+            if not self.state.armed:
+                if (rospy.Time.now() - last_req) > rospy.Duration(5.0):
+                    rospy.loginfo_throttle(10, "waiting for takeoff")
+                    continue
+                if(self.arming_client.call(arm_cmd).success == True):
+                    rospy.loginfo("Vehicle armed")
+                    break
+                else:
+                    rospy.loginfo("arm call failed, retry")
+            else:
+                rospy.loginfo("Vehicle armed")
+
+            last_req = rospy.Time.now()
+            rate.sleep()
+    
     #
     # Helper methods
     #
@@ -319,8 +365,8 @@ class MavrosOffboardPosctl(object):
         self.start_sending_position_setpoint()
 
         rospy.logwarn("please tell the drone to takeoff then put the drone in offboard mode")        
-        self.wait_for_landed_state(mavutil.mavlink.MAV_LANDED_STATE_TAKEOFF)
-        self.wait_for_mode('OFFBOARD')
+        self.wait_for_takeoff()
+        self.wait_for_offborad()
 
         # tell rover and referee it can go
         self.ready_pub.publish(True)

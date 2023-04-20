@@ -4,8 +4,8 @@
 
   <!--optional nodes-->
   <arg name="with_fbet" default="false"/>
-  <arg name="with_path_planning" default="false"/>
-  <arg name="with_local_planner" default="false"/>
+  <arg name="with_path_planning" default="true"/>
+  <arg name="with_local_planner" default="true"/>
   <arg name="with_octomap" default="true"/>
   <arg name="with_color_tracking" default="true"/>
 
