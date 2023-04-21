@@ -125,7 +125,7 @@
     </group>
 
     <!-- Launch offboard node -->
-    <node name="offboard_node" pkg="auav_2022_sample" type="offboard.py" output="screen" launch-prefix="xterm -T 'offboard' -e">
+    <node name="offboard_node" pkg="auav_2022_sample" type="offboard_auto.py" output="screen" launch-prefix="xterm -T 'offboard' -e">
       <remap from="rover_finished" to="rover/finished"/>
     </node>
 
