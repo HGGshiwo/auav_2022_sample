@@ -165,6 +165,8 @@
       </node>
     </group>
 
+    <!-- 碰撞发布 -->
+    <node name="contact_republisher" pkg="contact_republisher" type="contact_republisher_node"/>
   </group>
 
 </launch>
