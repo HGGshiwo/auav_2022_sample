@@ -23,19 +23,28 @@ class RoverController(object):
         self.v_max = rospy.get_param('~v_max', 0.2)  #  max velocity
         self.omega_max = rospy.get_param('~omega', 0.3)  #  max rotation rate
         self.ready = False
-        rospy.spin()
-        
+        self.run()
+
     def __del__(self):
         self.stop()
 
     def callback_ready(self, msg):
-        self.ready = msg.data        
-        # delay before start
-        rospy.sleep(self.delay)
-        self.run()
+        self.ready = msg.data
 
     def run(self):
         self.pub_finished.publish(False)
+
+        # wait for drone ready
+        rate = rospy.Rate(1)
+        while not rospy.is_shutdown():
+            rospy.logdebug_throttle(10, 'waiting for ready')
+            rate.sleep()
+            if self.ready:
+                rospy.loginfo('trial is running')
+                break
+
+        # delay before start
+        rospy.sleep(self.delay)
 
         # run mode
         self.follow_reference()

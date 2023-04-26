@@ -258,7 +258,7 @@ class MavrosOffboardPosctl(object):
 
     def is_at_position(self, x, y, z, offset):
         """offset: meters"""
-        rospy.logdebug(
+        rospy.loginfo(
             "current position | x:{0:.2f}, y:{1:.2f}, z:{2:.2f}".format(
                 self.local_position.pose.position.x, self.local_position.pose.
                 position.y, self.local_position.pose.position.z))

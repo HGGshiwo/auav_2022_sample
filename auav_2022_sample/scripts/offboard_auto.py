@@ -9,7 +9,7 @@ from sensor_msgs.msg import Imu
 from pymavlink import mavutil
 from std_msgs.msg import Bool
 from threading import Thread
-
+import numpy as np
 
 class Auto(MavrosOffboardPosctl):
 
@@ -48,9 +48,9 @@ class Auto(MavrosOffboardPosctl):
         self.set_param_srv = rospy.ServiceProxy('mavros/param/set', ParamSet)
 
         # ROS subscribers
-        self.rov_pos_sub = rospy.Subscriber('rover/point',
-                                            PointStamped,
-                                            self.rover_pos_callback)
+        # self.rov_pos_sub = rospy.Subscriber('rover/point',
+        #                                     PointStamped,
+        #                                     self.rover_pos_callback)
         self.ext_state_sub = rospy.Subscriber('mavros/extended_state',
                                               ExtendedState,
                                               self.extended_state_callback)
@@ -149,7 +149,11 @@ class Auto(MavrosOffboardPosctl):
         rospy.logwarn("please tell the drone to takeoff then put the drone in offboard mode")        
         self.wait_for_takeoff()
         self.wait_for_offborad()
-        self.wait_for_landed_state(mavutil.mavlink.MAV_LANDED_STATE_IN_AIR)
+        p_goal = [0, 0, 0.5]
+        self.goto_position(x=p_goal[0], y=p_goal[1], z=p_goal[2], yaw_deg=np.rad2deg(0))
+        rospy.logwarn("wait for the drone go to the initial position")
+        while not self.is_at_position(x=p_goal[0], y=p_goal[1], z=p_goal[2], offset=0.1):
+            rospy.sleep(10)
         
         # tell rover and referee it can go
         self.ready_pub.publish(True)

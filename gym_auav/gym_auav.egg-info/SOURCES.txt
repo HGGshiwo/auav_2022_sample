@@ -1,0 +1,6 @@
+setup.py
+gym_auav.egg-info/PKG-INFO
+gym_auav.egg-info/SOURCES.txt
+gym_auav.egg-info/dependency_links.txt
+gym_auav.egg-info/requires.txt
+gym_auav.egg-info/top_level.txt

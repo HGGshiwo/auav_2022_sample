@@ -13,13 +13,13 @@ class Referee:
         self.sub_rover = rospy.Subscriber("rover", Odometry, self.rover_callback)
         self.sub_drone = rospy.Subscriber("drone", Odometry, self.drone_callback)
         self.pub_score = rospy.Publisher("score", Float32, queue_size=10)
-        self.pub_inst_score = rospy.Publisher("inst_score", Float32, queue_size=10)
         self.sub_drone_ready = rospy.Subscriber("drone_ready", Bool, self.drone_ready_callback)
         self.sub_rover_finished = rospy.Subscriber("rover_finished", Bool, self.rover_finished_callback)
         self.drone_position = None
         self.rover_position = None
         self.drone_ready = False
         self.rover_finished = False
+        self.start = None
         self.sum = 0
         self.samples = 0
         rospy.spin()
@@ -57,14 +57,9 @@ class Referee:
         rospy.loginfo('distance: %f, inst score: %f, sum: %f samples: %10d, score: %f',
                 distance, inst_score, self.sum, self.samples, self.score)
         self.pub_score.publish(Float32(self.score))
-        self.pub_inst_score.publish(Float32(inst_score))
 
     def drone_ready_callback(self, msg):
         self.drone_ready = msg.data
-        if not self.drone_ready:
-            self.sum = 0
-            self.samples = 0
-
 
     def rover_finished_callback(self, msg):
         self.rover_finished = msg.data
