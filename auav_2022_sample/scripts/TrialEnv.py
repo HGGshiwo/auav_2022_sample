@@ -406,7 +406,10 @@ class TrialEnv(object):
             direction = [x, y, z]
         yaw = np.arctan2(direction[0], direction[1])
         yaw_deg = np.rad2deg(yaw)
-        p_goal = self.local_position + direction
+        drone = np.array(
+            [self.local_position.pose.position.x, self.local_position.pose.position.y]
+        )
+        p_goal = drone + direction
         if p_goal[2] < 0:
             rospy.logerr(f"illegal taregt: ({p_goal[0]}, {p_goal[1]}, {p_goal[2]})")
             return
