@@ -2,7 +2,7 @@
 # 自动起飞: https://docs.px4.io/main/en/ros/mavros_offboard_python.html
 from offboard import MavrosOffboardPosctl
 import rospy
-from geometry_msgs.msg import PoseStamped, PointStamped
+from geometry_msgs.msg import PoseStamped, PointStamped, Point
 from mavros_msgs.msg import ExtendedState, State
 from mavros_msgs.srv import ParamGet, ParamSet, CommandBool, CommandBoolRequest, SetMode, SetModeRequest
 from sensor_msgs.msg import Imu
@@ -62,7 +62,9 @@ class Auto(MavrosOffboardPosctl):
                                               self.local_position_callback)
         self.state_sub = rospy.Subscriber('mavros/state', State,
                                           self.state_callback)
-
+        self.fly_towards_sub = rospy.Subscriber('/fly_towards', Point, self.fly_towards) 
+        
+        
         self.ready_pub = rospy.Publisher('ready', Bool, queue_size=10)
 
         self.pos = PoseStamped()
@@ -74,6 +76,25 @@ class Auto(MavrosOffboardPosctl):
         # send setpoints in seperate thread to better prevent failsafe
         self.pos_thread = Thread(target=self.send_pos, args=())
         self.run()
+
+    def fly_towards(self, msg: Point):
+        """fly towards the given direction"""
+        if direction.all() == None:
+            direction = [msg.x, msg.y, msg.z]
+        yaw = np.arctan2(direction[0], direction[1])
+        yaw_deg = np.rad2deg(yaw)
+        drone = np.array(
+            [
+                self.local_position.pose.position.x,
+                self.local_position.pose.position.y,
+                self.local_position.pose.position.z,
+            ]
+        )
+        p_goal = drone + direction * 0.1
+        if p_goal[2] < 0:
+            rospy.logerr(f"illegal taregt: ({p_goal[0]}, {p_goal[1]}, {p_goal[2]})")
+            return
+        self.goto_position(p_goal[0], p_goal[1], p_goal[2], yaw_deg)
 
     def wait_for_offborad(self):
         last_req = rospy.Time.now()

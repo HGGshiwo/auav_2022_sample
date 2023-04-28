@@ -36,8 +36,8 @@ class Referee:
 
         # if time expired
         if self.rover_finished:
-            rospy.logwarn('trial finished, final score: %f', self.score)
-            rospy.signal_shutdown('finished')
+            rospy.logwarn_once('trial finished, final score: %f', self.score)
+            # rospy.signal_shutdown('finished')
             return
 
         # abort if no drone position

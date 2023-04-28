@@ -31,8 +31,9 @@ class RoverController(object):
     def callback_ready(self, msg):
         self.ready = msg.data        
         # delay before start
-        rospy.sleep(self.delay)
-        self.run()
+        # rospy.sleep(self.delay)
+        if self.ready:
+            self.run()
 
     def run(self):
         self.pub_finished.publish(False)
@@ -48,7 +49,7 @@ class RoverController(object):
         r = 0.5
         plot = False
         planner = RoverPlanner(x=0, y=2, v=v, theta=1.57, r=r)
-        for i in range(2):
+        for i in range(1):
             planner.goto(0.0, 8.0, v, r)
             planner.goto(-3.0, 8.0, v, r)
             planner.goto(-3.0, 4.0, v, r)

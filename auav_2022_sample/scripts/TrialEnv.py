@@ -11,6 +11,8 @@ from mavros_msgs.srv import (
     CommandBoolRequest,
     SetMode,
     SetModeRequest,
+    CommandTOL,
+    CommandTOLRequest,
 )
 from sensor_msgs.msg import Imu
 from pymavlink import mavutil
@@ -40,15 +42,15 @@ class TrialEnv(object):
                 "imu",
             ]
         }
-
         # ROS services
-
         rospy.loginfo("waiting for ROS services")
         try:
             services = [
                 "mavros/param/get",
                 "mavros/cmd/arming",
                 "mavros/set_mode",
+                "mavros/cmd/takeoff",
+                "mavros/cmd/land",
                 "/gazebo/reset_world",
             ]
             for service in services:
@@ -60,13 +62,15 @@ class TrialEnv(object):
         self.reset_world_srv = rospy.ServiceProxy("/gazebo/reset_world", Empty)
         self.set_mode_srv = rospy.ServiceProxy("mavros/set_mode", SetMode)
         self.arming_srv = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)
+        self.land_srv = rospy.ServiceProxy("mavros/cmd/land", CommandTOL)
+        self.takeoff_srv = rospy.ServiceProxy("mavros/cmd/takeoff", CommandTOL)
         self.get_param_srv = rospy.ServiceProxy("mavros/param/get", ParamGet)
         self.set_param_srv = rospy.ServiceProxy("mavros/param/set", ParamSet)
 
         # ROS subscribers
-        # self.rov_pos_sub = rospy.Subscriber(
-        #     "rover/point", PointStamped, self.rover_pos_callback
-        # )
+        self.rov_pos_sub = rospy.Subscriber(
+            "rover/point", PointStamped, self.rover_pos_callback
+        )
         self.ext_state_sub = rospy.Subscriber(
             "mavros/extended_state", ExtendedState, self.extended_state_callback
         )
@@ -84,10 +88,10 @@ class TrialEnv(object):
             "/drone/camera/color/image_raw", Image, self.image_callback, queue_size=1
         )
         self.reward_sub = rospy.Subscriber(
-            "/drone/inst_score", Float32, self.reward_callback, queue_size=1
+            "/inst_score", Float32, self.reward_callback, queue_size=1
         )
         self.finished_sub = rospy.Subscriber(
-            "/drone/rover/finished", Bool, self.finished_callback
+            "/rover/finished", Bool, self.finished_callback
         )
 
         # ROS publishers
@@ -100,13 +104,45 @@ class TrialEnv(object):
         self.radius = 0.1
         self.bridge = CvBridge()
         self.camera_info = None
-        self.observation = None
+        self.observation = np.zeros((1, 3, 480, 640))
         self.reward = 0
         self.terminated = False
+        self.px4_process = None
+        self.actions =  [
+            np.array([0, 0, 0]),
+            np.array([0, 0, 1]),
+            np.array([0, 0, -1]),
+            np.array([0, 1, 0]),
+            np.array([0, -1, 0]),
+            np.array([1, 0, 0]),
+            np.array([-1, 0, 0]),
+        ]
         # send setpoints in seperate thread to better prevent failsafe
         self.pos_thread = Thread(target=self.send_pos, args=())
 
-        self.start()
+        # make sure the simulation is ready to start the mission
+        rospy.logwarn("waiting for topic")
+        self.wait_for_topics()
+
+        rospy.logwarn("waiting for landed state")
+        self.wait_for_landed_state(mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+
+        rospy.logwarn("setting parameters")
+        self.set_param("EKF2_AID_MASK", 24, timeout=30, is_integer=True)
+        self.set_param("EKF2_HGT_MODE", 3, timeout=5, is_integer=True)
+        self.set_param("EKF2_EV_DELAY", 0.0, timeout=5, is_integer=False)
+        self.set_param("MPC_XY_VEL_MAX", 1.0, timeout=5, is_integer=False)
+        self.set_param("MC_YAWRATE_MAX", 60.0, timeout=5, is_integer=False)
+        self.set_param("MIS_TAKEOFF_ALT", 1.0, timeout=5, is_integer=False)
+        self.set_param("NAV_MC_ALT_RAD", 0.2, timeout=5, is_integer=False)
+        self.set_param("RTL_RETURN_ALT", 3.0, timeout=5, is_integer=False)
+        self.set_param("RTL_DESCEND_ALT", 1.0, timeout=5, is_integer=False)
+        rospy.logwarn("sending offboard")
+        self.start_sending_position_setpoint()
+
+        rospy.logwarn(
+            "please tell the drone to takeoff then put the drone in offboard mode"
+        )
 
     #
     # Callback functions
@@ -224,7 +260,8 @@ class TrialEnv(object):
             rospy.logerr("no camera info")
             return
 
-        self.observation = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        obs = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        self.observation = np.array([obs]) # 480*640*3-> 3*480*640
 
     def reward_callback(self, msg):
         self.reward = msg.data
@@ -360,13 +397,13 @@ class TrialEnv(object):
 
     def is_at_position(self, x, y, z, offset):
         """offset: meters"""
-        rospy.loginfo(
-            "current position | x:{0:.2f}, y:{1:.2f}, z:{2:.2f}".format(
-                self.local_position.pose.position.x,
-                self.local_position.pose.position.y,
-                self.local_position.pose.position.z,
-            )
-        )
+        # rospy.loginfo(
+        #     "current position | x:{0:.2f}, y:{1:.2f}, z:{2:.2f}".format(
+        #         self.local_position.pose.position.x,
+        #         self.local_position.pose.position.y,
+        #         self.local_position.pose.position.z,
+        #     )
+        # )
 
         desired = np.array((x, y, z))
         pos = np.array(
@@ -400,22 +437,32 @@ class TrialEnv(object):
         quaternion = quaternion_from_euler(0, 0, yaw)
         self.pos.pose.orientation = Quaternion(*quaternion)
 
-    def fly_towards(self, x=None, y=None, z=None, direction=[None, None, None]):
+    def fly_towards(self, direction):
         """fly towards the given direction"""
-        if direction.all() == None:
-            direction = [x, y, z]
-        yaw = np.arctan2(direction[0], direction[1])
-        yaw_deg = np.rad2deg(yaw)
-        drone = np.array(
-            [self.local_position.pose.position.x, self.local_position.pose.position.y]
-        )
-        p_goal = drone + direction
-        if p_goal[2] < 0:
-            rospy.logerr(f"illegal taregt: ({p_goal[0]}, {p_goal[1]}, {p_goal[2]})")
-            return
-        self.goto_position(p_goal[0], p_goal[1], p_goal[2], yaw_deg)
+        # if direction.all() == None:
+        #     direction = [x, y, z]
+        # yaw = np.arctan2(direction[0], direction[1])
+        # yaw_deg = np.rad2deg(yaw)
+        # drone = np.array(
+        #     [
+        #         self.local_position.pose.position.x,
+        #         self.local_position.pose.position.y,
+        #         self.local_position.pose.position.z,
+        #     ]
+        # )
+        # p_goal = drone + direction * 0.1
+        # if p_goal[2] < 0:
+        #     rospy.logerr(f"illegal taregt: ({p_goal[0]}, {p_goal[1]}, {p_goal[2]})")
+        #     return
+        # self.goto_position(p_goal[0], p_goal[1], p_goal[2], yaw_deg)
+        self.pos.pose.position.x += direction[0]
+        self.pos.pose.position.y += direction[1]
+        self.pos.pose.position.z += direction[2]
+        yaw = np.arctan2(direction[1], direction[0])
+        quaternion = quaternion_from_euler(0, 0, yaw)
+        self.pos.pose.orientation = Quaternion(*quaternion)
 
-    def wait_for_offborad(self):
+    def set_offborad(self):
         last_req = rospy.Time.now()
         rate = rospy.Rate(10)  # 10 Hz
         offb_set_mode = SetModeRequest()
@@ -434,103 +481,102 @@ class TrialEnv(object):
             rate.sleep()
             last_req = rospy.Time.now()
 
-    def wait_for_takeoff(self):
+    def set_arm(self, value):
         last_req = rospy.Time.now()
         rate = rospy.Rate(10)  # 10 Hz
         arm_cmd = CommandBoolRequest()
-        arm_cmd.value = True
+        arm_cmd.value = value
         while not rospy.is_shutdown():
-            if not self.state.armed:
+            if self.state.armed != value:
                 if (rospy.Time.now() - last_req) > rospy.Duration(5.0):
-                    rospy.loginfo_throttle(10, "waiting for takeoff")
+                    rospy.loginfo_throttle(10, f"waiting for arm: {value}")
                     continue
                 if self.arming_srv.call(arm_cmd).success == True:
-                    rospy.loginfo("Vehicle armed")
+                    rospy.loginfo(f"Vehicle armed: {value}")
                     break
                 else:
                     rospy.loginfo("arm call failed, retry")
             else:
-                rospy.loginfo("Vehicle armed")
+                rospy.loginfo(f"Vehicle armed: {value}")
+                break
 
             last_req = rospy.Time.now()
             rate.sleep()
 
-    def start(self):
-        # make sure the simulation is ready to start the mission
-        self.ready_pub.publish(False)
+    def set_takeoff(self, takeoff=True):
+        altitude = 1.0 if takeoff else 0
+        srv = self.takeoff_srv if takeoff else self.land_srv
+        str = "takeoff" if takeoff else "land"
+        z = self.local_position.pose.position.z
+        if (z - altitude) ** 2 < 0.1:
+            return
+        try:
+            res = srv(altitude = altitude, latitude = 0, longitude = 0, min_pitch = 0, yaw = 0)
+            if res.success:
+                rospy.logwarn(f"Vehicle {str}")
+            else:
+                rospy.logwarn(f"Vehicle {str} failed")
 
-        rospy.logwarn("waiting for landed state")
-        self.wait_for_landed_state(mavutil.mavlink.MAV_LANDED_STATE_ON_GROUND)
+        except rospy.ServiceException as e:
+            rospy.logerr(e)
 
-        rospy.logwarn("setting parameters")
-        self.set_param("EKF2_AID_MASK", 24, timeout=30, is_integer=True)
-        self.set_param("EKF2_HGT_MODE", 3, timeout=5, is_integer=True)
-        self.set_param("EKF2_EV_DELAY", 0.0, timeout=5, is_integer=False)
-        self.set_param("MPC_XY_VEL_MAX", 1.0, timeout=5, is_integer=False)
-        self.set_param("MC_YAWRATE_MAX", 60.0, timeout=5, is_integer=False)
-        self.set_param("MIS_TAKEOFF_ALT", 1.0, timeout=5, is_integer=False)
-        self.set_param("NAV_MC_ALT_RAD", 0.2, timeout=5, is_integer=False)
-        self.set_param("RTL_RETURN_ALT", 3.0, timeout=5, is_integer=False)
-        self.set_param("RTL_DESCEND_ALT", 1.0, timeout=5, is_integer=False)
-
-        rospy.logwarn("waiting for topic")
-        self.wait_for_topics()
-
-        # self.set_param("MPC_XY_CRUISE", 1.0, timeout=5, is_integer=False)
-        # self.set_param("MPC_VEL_MANUAL", 1.0, timeout=5, is_integer=False)
-        # self.set_param("MPC_ACC_HOR", 1.0, timeout=5, is_integer=False)
-        # self.set_param("MPC_JERK_AUTO", 2.0, timeout=5, is_integer=False)
-        # self.set_param("MC_PITCHRATE_MAX", 100.0, timeout=5, is_integer=False)
-        # self.set_param("MC_ROLLRATE_MAX", 100.0, timeout=5, is_integer=False)
-
-        rospy.logwarn("sending offboard")
-        self.start_sending_position_setpoint()
-
-        rospy.logwarn(
-            "please tell the drone to takeoff then put the drone in offboard mode"
-        )
-        self.wait_for_takeoff()
-        self.wait_for_offborad()
-
-        # then reset will be called
+        rospy.loginfo("wait for drone to takeoff or land")
+        while True:
+            z = self.local_position.pose.position.z
+            if (z - altitude) ** 2 < 0.1:
+                break
+            rospy.sleep(10)
 
     def reset(self):
         """reset the env"""
+        self.ready_pub.publish(False)
+        rospy.logwarn("reset the env")
         self.reward = 0
         self.terminated = False
-        # reset model
-        self.reset_world_srv()
 
-        # let the drone takeoff from the ground
-        p_goal = [0, 0, 0.5]
-        self.goto_position(p_goal[0], p_goal[1], p_goal[2], yaw_deg=np.rad2deg(0))
-        rospy.logwarn("wait for the drone go to the initial position")
-        while True:
-            if self.is_at_position(p_goal[0], p_goal[1], p_goal[2], offset=0.1):
-                break
-            rospy.sleep(1)
-
+        # self.set_takeoff(False) # wait the drone to land
+        # self.reset_world_srv() # reset model
+        self.set_offborad()
+        self.set_arm(True)
+        
+        # self.set_takeoff(True) # let the drone takeoff from the ground
+        # self.goto_position(0, 0, 0.5, np.rad2deg(0)) 
+        rospy.loginfo("Wait for takeoff")
+        rospy.sleep(10)            
+        
         # tell rover and referee it can go
         self.ready_pub.publish(True)
+        rospy.logwarn("reset done")
         return self.observation, None
 
+    
     def step(self, action):
+        rospy.logwarn(f"step with action: {action}")
         """interact with the environment, get observation and reward"""
         action2direction = [
             np.array([0, 0, 0]),
-            np.array([0, 0, 1]),
-            np.array([0, 0, -1]),
-            np.array([0, 1, 0]),
-            np.array([0, -1, 0]),
-            np.array([1, 0, 0]),
-            np.array([-1, 0, 0]),
+            np.array([0, 0, 0.5]),
+            np.array([0, 0, -0.5]),
+            np.array([0, 0.5, 0]),
+            np.array([0, -0.5, 0]),
+            np.array([0.5, 0, 0]),
+            np.array([-0.5, 0, 0]),
         ]
-        self.fly_towards(direction=action2direction[action])
-
-        observation = self.observation
-        reward = self.reward
-        terminated = self.terminated
-        rospy.loginfo(
-            f"[step]action: ${action}, inst reward: {reward}, terminated: {terminated}"
-        )
+        self.fly_towards(direction=action2direction[action[0]])
+        observation = self.observation # 1*480*640*3
+        reward = np.array([self.reward])
+        terminated = [self.terminated]
+        rospy.logwarn(f"step done")
         return observation, reward, terminated, False, None
+
+    def log(self, tag, any):
+        """print something into the console"""
+        if tag == "warn":
+            rospy.logwarn(any)
+        elif tag == "err":
+            rospy.logerr(any)
+        else:
+            rospy.loginfo(any)
+    
+    def spin():
+        rospy.spin()
