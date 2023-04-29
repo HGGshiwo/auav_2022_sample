@@ -36,20 +36,22 @@ class RoverController(object):
             self.run()
 
     def run(self):
-        self.pub_finished.publish(False)
 
         # run mode
-        self.follow_reference()
-        self.pub_finished.publish(True)
-        rospy.loginfo('rover trajectory finished')
+        while True:
+            self.pub_finished.publish(False)
+            self.follow_reference()
+            self.pub_finished.publish(True)
+        
+            rospy.loginfo('rover trajectory finished')
 
     def follow_reference(self):
-        rate = rospy.Rate(10)
+        rate = rospy.Rate(2)
         v = 0.3
         r = 0.5
         plot = False
         planner = RoverPlanner(x=0, y=2, v=v, theta=1.57, r=r)
-        for i in range(1):
+        for i in range(2):
             planner.goto(0.0, 8.0, v, r)
             planner.goto(-3.0, 8.0, v, r)
             planner.goto(-3.0, 4.0, v, r)

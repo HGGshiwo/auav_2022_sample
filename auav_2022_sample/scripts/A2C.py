@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 
+
 class A2C(nn.Module):
     """
     (Synchronous) Advantage Actor-Critic agent class
@@ -20,7 +21,7 @@ class A2C(nn.Module):
                 for this code CPU is totally fine).
         critic_lr: The learning rate for the critic network (should usually be larger than the actor_lr).
         actor_lr: The learning rate for the actor network.
-        n_envs: The number of environments that run in parallel (on multiple CPUs) to collect experiences.
+        random_rate: Propbility to choose the random action.
     """
 
     def __init__(
@@ -30,29 +31,29 @@ class A2C(nn.Module):
         device: torch.device,
         critic_lr: float,
         actor_lr: float,
-        n_envs: int,
+        random_rate: float,
     ) -> None:
         """Initializes the actor and critic networks and their respective optimizers."""
         super().__init__()
         self.device = device
-        self.n_envs = n_envs
-
+        self.n_actions = n_actions
+        self.random_rate = random_rate
         n_features = 30 * 40 * 128
-        
+
         critic_layers = [
             nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2,stride=2), # (240, 320, 32)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (240, 320, 32)
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2,stride=2), # (120, 160, 64)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (120, 160, 64)
             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2,stride=2), # (60, 80, 128)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (60, 80, 128)
             nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2,stride=2), # (30, 40, 128)
-            nn.Flatten(),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (30, 40, 128)
+            nn.Flatten(0),
             nn.Linear(n_features, 32),
             nn.ReLU(),
             nn.Linear(32, 32),
@@ -63,17 +64,17 @@ class A2C(nn.Module):
         actor_layers = [
             nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2,stride=2), # (240, 320, 32)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (240, 320, 32)
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2,stride=2), # (120, 160, 64)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (120, 160, 64)
             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2,stride=2), # (60, 80, 128)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (60, 80, 128)
             nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2,stride=2), # (30, 40, 128)
-            nn.Flatten(),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (30, 40, 128)
+            nn.Flatten(0),
             nn.Linear(n_features, 32),
             nn.ReLU(),
             nn.Linear(32, 32),
@@ -82,8 +83,7 @@ class A2C(nn.Module):
                 32, n_actions
             ),  # estimate action logits (will be fed into a softmax later)
         ]
-        
-        
+
         # define actor and critic networks
         self.critic = nn.Sequential(*critic_layers).to(self.device)
         self.actor = nn.Sequential(*actor_layers).to(self.device)
@@ -100,17 +100,16 @@ class A2C(nn.Module):
             x: A batched vector of states.
 
         Returns:
-            state_values: A tensor with the state values, with shape [n_envs,].
-            action_logits_vec: A tensor with the action logits, with shape [n_envs, n_actions].
+            state_values: A tensor with the state values.
+            action_logits_vec: A tensor with the action logits, with shape [n_actions].
         """
         x = torch.Tensor(x).to(self.device)
-        x = x.permute(0, 3, 1, 2)
-        state_values = self.critic(x)  # shape: [n_envs,]
-        action_logits_vec = self.actor(x)  # shape: [n_envs, n_actions]
+        state_values = self.critic(x)
+        action_logits_vec = self.actor(x)  # shape: (n_actions, )
         return (state_values, action_logits_vec)
 
     def select_action(
-        self, x: np.ndarray
+        self, x: np.ndarray, use_random=True
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Returns a tuple of the chosen actions and the log-probs of those actions.
@@ -119,9 +118,9 @@ class A2C(nn.Module):
             x: A batched vector of states.
 
         Returns:
-            actions: A tensor with the actions, with shape [n_steps_per_update, n_envs].
-            action_log_probs: A tensor with the log-probs of the actions, with shape [n_steps_per_update, n_envs].
-            state_values: A tensor with the state values, with shape [n_steps_per_update, n_envs].
+            actions: A tensor with the actions, with shape [n_steps_per_update].
+            action_log_probs: A tensor with the log-probs of the actions, with shape [n_steps_per_update, ].
+            state_values: A tensor with the state values, with shape [n_steps_per_update, ].
         """
         state_values, action_logits = self.forward(x)
         action_pd = torch.distributions.Categorical(
@@ -129,6 +128,17 @@ class A2C(nn.Module):
         )  # implicitly uses softmax
         actions = action_pd.sample()
         action_log_probs = action_pd.log_prob(actions)
+        if use_random:
+            random_action_pd = torch.distributions.Categorical(
+                torch.ones((self.n_actions)) / self.n_actions
+            )
+            random_action = random_action_pd.sample()
+            choose_pd = torch.distributions.Categorical(
+                torch.Tensor([self.random_rate, 1 - self.random_rate])
+            )
+            choose = choose_pd.sample()
+            if choose == 0:
+                actions = random_action
         entropy = action_pd.entropy()
         return (actions, action_log_probs, state_values, entropy)
 
@@ -149,10 +159,10 @@ class A2C(nn.Module):
         using Generalized Advantage Estimation (GAE) to compute the advantages (https://arxiv.org/abs/1506.02438).
 
         Args:
-            rewards: A tensor with the rewards for each time step in the episode, with shape [n_steps_per_update, n_envs].
-            action_log_probs: A tensor with the log-probs of the actions taken at each time step in the episode, with shape [n_steps_per_update, n_envs].
-            value_preds: A tensor with the state value predictions for each time step in the episode, with shape [n_steps_per_update, n_envs].
-            masks: A tensor with the masks for each time step in the episode, with shape [n_steps_per_update, n_envs].
+            rewards: A tensor with the rewards for each time step in the episode, with shape [n_steps_per_update].
+            action_log_probs: A tensor with the log-probs of the actions taken at each time step in the episode, with shape [n_steps_per_update].
+            value_preds: A tensor with the state value predictions for each time step in the episode, with shape [n_steps_per_update].
+            masks: A tensor with the masks for each time step in the episode, with shape [n_steps_per_update].
             gamma: The discount factor.
             lam: The GAE hyperparameter. (lam=1 corresponds to Monte-Carlo sampling with high variance and no bias,
                                           and lam=0 corresponds to normal TD-Learning that has a low variance but is biased
@@ -164,7 +174,7 @@ class A2C(nn.Module):
             actor_loss: The actor loss for the minibatch.
         """
         T = len(rewards)
-        advantages = torch.zeros(T, self.n_envs, device=device)
+        advantages = torch.zeros(T, device=device)
 
         # compute the advantages using GAE
         gae = 0.0

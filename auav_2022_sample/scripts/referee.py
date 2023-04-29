@@ -34,12 +34,6 @@ class Referee:
         
         self.rover_position = odom.pose.pose.position
 
-        # if time expired
-        if self.rover_finished:
-            rospy.logwarn_once('trial finished, final score: %f', self.score)
-            # rospy.signal_shutdown('finished')
-            return
-
         # abort if no drone position
         if self.drone_position is None:
             return
@@ -68,7 +62,12 @@ class Referee:
 
     def rover_finished_callback(self, msg):
         self.rover_finished = msg.data
-
+        if self.rover_finished:
+            rospy.logwarn('trial finished, final score: %f', self.score)
+            # reset env
+            self.sum = 0
+            self.samples = 0
+            return
 
 
 if __name__ == "__main__":

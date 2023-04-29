@@ -124,12 +124,12 @@
     </group>
 
     <!-- Launch offboard node -->
-    <!-- <node name="offboard_node" pkg="auav_2022_sample" type="offboard_auto.py" output="screen" launch-prefix="xterm -T 'offboard' -e">
-      <remap from="rover_finished" to="rover/finished"/>
-    </node> -->
-    <node name="offboard_node" pkg="auav_2022_sample" type="train.py" output="log" launch-prefix="xterm -T 'train' -e">
+    <node name="offboard_node" pkg="auav_2022_sample" type="offboard_auto.py" output="log" launch-prefix="xterm -T 'offboard' -e">
       <remap from="rover_finished" to="rover/finished"/>
     </node>
+    <!-- <node name="offboard_node" pkg="auav_2022_sample" type="train.py" output="log" launch-prefix="xterm -T 'train' -e">
+      <remap from="rover_finished" to="rover/finished"/>
+    </node> -->
     <!-- Frontier based exploration -->
     <group if="$(arg with_fbet)">
       <node name="fbet" pkg="fbet" type="fbet_node">
