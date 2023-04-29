@@ -101,7 +101,7 @@ class TrainSession(MavrosOffboardPosctl):
         self.rover_pos = PointStamped()  # not used
         self.pos = PoseStamped()
         self.radius = 0.1
-        
+
         self.sub_topics_ready = {
             key: False
             for key in [
@@ -435,12 +435,16 @@ class TrainSession(MavrosOffboardPosctl):
 
 
 if __name__ == "__main__":
-    session = TrainSession(
-        n_updates=2000, n_steps_per_update=8
-    )  # 不要把train写入init中，否则不会报错
-    session.setup_env()
-    session.start_train()
-    session.show_result()
+    try:
+        session = TrainSession(
+            n_updates=2000, n_steps_per_update=8
+        )  # 不要把train写入init中，否则不会报错
+        
+        session.setup_env()
+        session.start_train()
+        session.show_result()
+    except Exception as e:
+        rospy.logerr(f"train err: {e}")
 
     # waiting for thread termination
     rospy.spin()
