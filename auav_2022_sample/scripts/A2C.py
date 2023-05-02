@@ -38,22 +38,27 @@ class A2C(nn.Module):
         self.device = device
         self.n_actions = n_actions
         self.random_rate = random_rate
-        n_features = 30 * 40 * 128
+        n_features = 15 * 20 * 64
 
-        critic_layers = [
-            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
+        backbone_layers = [
+            nn.Conv2d(3, 8, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (240, 320, 32)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (240, 320, 8)
+            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (120, 160, 16)
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (60, 80, 32)
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (120, 160, 64)
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (30, 40, 64),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (60, 80, 128)
-            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (30, 40, 128)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (15, 20, 64)
             nn.Flatten(0),
+        ]
+        critic_layers = [
             nn.Linear(n_features, 32),
             nn.ReLU(),
             nn.Linear(32, 32),
@@ -62,19 +67,6 @@ class A2C(nn.Module):
         ]
 
         actor_layers = [
-            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (240, 320, 32)
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (120, 160, 64)
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (60, 80, 128)
-            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (30, 40, 128)
-            nn.Flatten(0),
             nn.Linear(n_features, 32),
             nn.ReLU(),
             nn.Linear(32, 32),
@@ -85,12 +77,18 @@ class A2C(nn.Module):
         ]
 
         # define actor and critic networks
+        self.backbone = nn.Sequential(*backbone_layers).to(self.device)
         self.critic = nn.Sequential(*critic_layers).to(self.device)
         self.actor = nn.Sequential(*actor_layers).to(self.device)
 
         # define optimizers for actor and critic
-        self.critic_optim = optim.RMSprop(self.critic.parameters(), lr=critic_lr)
-        self.actor_optim = optim.RMSprop(self.actor.parameters(), lr=actor_lr)
+        self.optim = optim.RMSprop(
+            [
+                {"params": self.critic.parameters(), "lr": critic_lr},
+                {"params": self.actor.parameters(), "lr": actor_lr},
+                {"params": self.backbone.parameters()},
+            ]
+        )
 
     def forward(self, x: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -104,6 +102,7 @@ class A2C(nn.Module):
             action_logits_vec: A tensor with the action logits, with shape [n_actions].
         """
         x = torch.Tensor(x).to(self.device)
+        x = self.backbone(x)
         state_values = self.critic(x)
         action_logits_vec = self.actor(x)  # shape: (n_actions, )
         return (state_values, action_logits_vec)
@@ -204,10 +203,6 @@ class A2C(nn.Module):
             critic_loss: The critic loss.
             actor_loss: The actor loss.
         """
-        self.critic_optim.zero_grad()
+        self.optim.zero_grad()
         critic_loss.backward()
-        self.critic_optim.step()
-
-        self.actor_optim.zero_grad()
-        actor_loss.backward()
-        self.actor_optim.step()
+        self.optim.step()
