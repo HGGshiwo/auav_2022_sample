@@ -7,19 +7,23 @@ from A2C import A2C
 import matplotlib.pyplot as plt
 import numpy as np
 import copy
+from datetime import timedelta
+
 
 class State:
-    def __init__(self, pre_train, mode="train") -> None:
-        """record the model data
+    def __init__(self, pre_train) -> None:
+        """
+        Record the model data
+
+        Args:
             pre_train:       pre_trained model path. Set to None if not use pretrain.
         """
         self.pre_train = pre_train
-        self.mode = mode
         self.config = {
             "actor_lr": 0.001,
             "critic_lr": 0.005,
             "random_rate": 0.3,
-            "n_updates": 800,
+            "n_updates": 1800,
             "n_steps_per_update": 4,
             "gamma": 0.999,
             "ent_coef": 0.01,  # coefficient for the entropy bonus (to encourage exploration)
@@ -63,6 +67,7 @@ class State:
         self.best_rewards = self.config["best_rewards"]
         self.best_agent = self.config["best_agent"]
         self.best_optim = self.config["best_optim"]
+
         return self
 
     def __exit__(self, exception_type, exception_value, exception_traceback):
@@ -72,9 +77,6 @@ class State:
         if len(self.critic_losses) == 0:
             return
 
-        if self.mode == "test":
-            return
-        
         now = int(round(time.time() * 1000))
         now_str = time.strftime("%Y%m%d%H%M%S", time.localtime(now / 1000))
 
@@ -120,15 +122,14 @@ class State:
 
         plt.savefig(f"{now_str}.png")
 
+        self.span = timedelta(seconds=self.start - end)
+
 
 if __name__ == "__main__":
     pre_train = None
-    use_train_mode = True
-    use_rl = True # 测试时是否使用强化学习辅助    
-    
-    mode = "train" if use_train_mode else "test" 
 
-    with State(pre_train, mode=mode) as state:
+    with State(pre_train) as state:
+        start = time.perf_counter()
         env = Env(use_odom=True)
         obs_shape = env.obs.shape
         action_shape = len(env.actions)
@@ -140,99 +141,87 @@ if __name__ == "__main__":
             device = torch.device("cpu")
 
         # init the agent
-        random_rate = 0 if mode == "test" else state.random_rate
         agent = A2C(
             obs_shape,
             action_shape,
             device,
             state.critic_lr,
             state.actor_lr,
-            random_rate,
+            state.random_rate,
         )
         if pre_train != None:
             agent.load_state_dict(state.best_agent)
             agent.optim.load_state_dict(state.best_optim)
-            
 
-        if mode == "train":
-            for sample_phase in range(state.n_start, state.n_updates):
-                # we don't have to reset the envs, they just continue playing
-                # until the episode is over and then reset automatically
+        for sample_phase in range(state.n_start, state.n_updates):
+            # we don't have to reset the envs, they just continue playing
+            # until the episode is over and then reset automatically
 
-                # reset lists that collect experiences of an episode (sample phase)
-                ep_value_preds = torch.zeros(state.n_steps_per_update, device=device)
-                ep_rewards = torch.zeros(state.n_steps_per_update, device=device)
-                ep_action_log_probs = torch.zeros(state.n_steps_per_update, device=device)
-                masks = torch.zeros(state.n_steps_per_update)
+            # reset lists that collect experiences of an episode (sample phase)
+            ep_value_preds = torch.zeros(state.n_steps_per_update, device=device)
+            ep_rewards = torch.zeros(state.n_steps_per_update, device=device)
+            ep_action_log_probs = torch.zeros(state.n_steps_per_update, device=device)
+            masks = torch.zeros(state.n_steps_per_update)
 
-                # at the start of training reset all envs to get an initial state
-                if sample_phase == 0:
-                    states, info = env.reset()
+            # at the start of training reset all envs to get an initial state
+            if sample_phase == 0:
+                states, info = env.reset()
 
-                # play n steps in our parallel environments to collect data
-                for step in range(state.n_steps_per_update):
-                    # select an action A_{t} using S_{t} as input for the agent
-                    actions, action_log_probs, state_value_preds, entropy = \
-                        agent.select_action(states)                  
-
-                    # perform the action A_{t} in the environment to get S_{t+1} and R_{t+1}
-                    states, rewards, terminated, truncated, infos = \
-                        env.step(actions.cpu().numpy())
-
-                    ep_value_preds[step] = torch.squeeze(state_value_preds)
-                    ep_rewards[step] = torch.tensor(rewards, device=device)
-                    ep_action_log_probs[step] = action_log_probs
-
-                    # add a mask (for the return calculation later);
-                    # for each env the mask is 1 if the episode is ongoing and 0 if it is terminated (not by truncation!)
-                    masks[step] = torch.tensor(not terminated)
-
-                # calculate the losses for actor and critic
-                critic_loss, actor_loss = agent.get_losses(
-                    ep_rewards,
-                    ep_action_log_probs,
-                    ep_value_preds,
+            # play n steps in our parallel environments to collect data
+            for step in range(state.n_steps_per_update):
+                # select an action A_{t} using S_{t} as input for the agent
+                (
+                    actions,
+                    action_log_probs,
+                    state_value_preds,
                     entropy,
-                    masks,
-                    state.gamma,
-                    state.lam,
-                    state.ent_coef,
-                    device,
+                ) = agent.select_action(states)
+
+                # perform the action A_{t} in the environment to get S_{t+1} and R_{t+1}
+                states, rewards, terminated, truncated, infos = env.step(
+                    actions.cpu().numpy()
                 )
-        
-                # update the actor and critic networks
-                agent.update_parameters(critic_loss, actor_loss)
 
-                # log the losses and entropy
-                state.critic_losses.append(critic_loss.detach().cpu().numpy())
-                state.actor_losses.append(actor_loss.detach().cpu().numpy())
-                state.entropies.append(entropy.detach().mean().cpu().numpy())
-                
-                env.log(f"[{sample_phase+1}/{state.n_updates}]actor loss: {state.actor_losses[-1]}, critic_loss: {state.critic_losses[-1]}")
+                ep_value_preds[step] = torch.squeeze(state_value_preds)
+                ep_rewards[step] = torch.tensor(rewards, device=device)
+                ep_action_log_probs[step] = action_log_probs
 
-                cur_rewards = ep_rewards.sum()
-                if cur_rewards > state.best_rewards:
-                    state.best_rewards = cur_rewards
-                    state.best_agent = copy.deepcopy(agent.state_dict())
-                    state.best_optim = copy.deepcopy(agent.optim.state_dict())
-                    state.n_start = sample_phase
-            state.return_queue = env.return_queue
-        
-        else:            
-            states, info = env.reset()
-            rewards = []
-            for i in range(100):
-                action = 0
-                if use_rl:
-                    actions, action_log_probs, state_value_preds, entropy = \
-                        agent.select_action(states) 
-                    action = actions.cpu().numpy()
-                
-                states, reward, terminated, truncated, infos = env.step(action)
-                rewards.append(reward)
-            
-            env.log(f"Test end with average reward: {rewards/len(rewards)}")    
+                # add a mask (for the return calculation later);
+                # for each env the mask is 1 if the episode is ongoing and 0 if it is terminated (not by truncation!)
+                masks[step] = torch.tensor(not terminated)
 
-            
-        env.log(f"{mode} done.")
-        
+            # calculate the losses for actor and critic
+            critic_loss, actor_loss = agent.get_losses(
+                ep_rewards,
+                ep_action_log_probs,
+                ep_value_preds,
+                entropy,
+                masks,
+                state.gamma,
+                state.lam,
+                state.ent_coef,
+                device,
+            )
+
+            # update the actor and critic networks
+            agent.update_parameters(critic_loss, actor_loss)
+
+            # log the losses and entropy
+            state.critic_losses.append(critic_loss.detach().cpu().numpy())
+            state.actor_losses.append(actor_loss.detach().cpu().numpy())
+            state.entropies.append(entropy.detach().mean().cpu().numpy())
+
+            env.log(
+                f"[{sample_phase+1}/{state.n_updates}]actor loss: {state.actor_losses[-1]}, critic_loss: {state.critic_losses[-1]}"
+            )
+
+            cur_rewards = ep_rewards.sum()
+            if cur_rewards > state.best_rewards:
+                state.best_rewards = cur_rewards
+                state.best_agent = copy.deepcopy(agent.state_dict())
+                state.best_optim = copy.deepcopy(agent.optim.state_dict())
+                state.n_start = sample_phase
+        state.return_queue = env.return_queue
+
+        end = time.perf_counter()
+        env.log(f"train done in {timedelta(seconds=end-start)}")

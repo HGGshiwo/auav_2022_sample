@@ -8,6 +8,7 @@
   <arg name="with_local_planner" default="false"/>
   <arg name="with_octomap" default="false"/>
   <arg name="with_color_tracking" default="true"/>
+  <arg name="use_train" default="true"/>
 
   <!--use cam_deg to set your camera angle
     also set camera angle for your drone in the world.jinja file
@@ -127,9 +128,17 @@
     <!-- <node name="offboard_node" pkg="auav_2022_sample" type="offboard_auto.py" output="log" launch-prefix="xterm -T 'offboard' -e">
       <remap from="rover_finished" to="rover/finished"/>
     </node> -->
-    <node name="offboard_node" pkg="auav_2022_sample" type="train.py" output="log" launch-prefix="xterm -T 'train' -e">
-      <remap from="rover_finished" to="rover/finished"/>
-    </node>
+    <group if="$(arg use_train)">
+      <node name="offboard_node" pkg="auav_2022_sample" type="train.py" output="log" launch-prefix="xterm -T 'train' -e">
+        <remap from="rover_finished" to="rover/finished"/>
+      </node>
+    </group>
+    <group unless="$(arg use_train)">
+      <node name="offboard_node" pkg="auav_2022_sample" type="test.py" output="log" launch-prefix="xterm -T 'test' -e">
+        <remap from="rover_finished" to="rover/finished"/>
+      </node>
+    </group>
+
     <!-- Frontier based exploration -->
     <group if="$(arg with_fbet)">
       <node name="fbet" pkg="fbet" type="fbet_node">
