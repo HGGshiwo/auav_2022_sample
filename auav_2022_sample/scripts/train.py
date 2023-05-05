@@ -153,6 +153,10 @@ if __name__ == "__main__":
             agent.load_state_dict(state.best_agent)
             agent.optim.load_state_dict(state.best_optim)
 
+        env.log("start train")
+        env.log(f"actor_lr: {state.actor_lr}")
+        env.log(f"critic_lr: {state.critic_lr}")
+
         for sample_phase in range(state.n_start, state.n_updates):
             # we don't have to reset the envs, they just continue playing
             # until the episode is over and then reset automatically
@@ -215,9 +219,8 @@ if __name__ == "__main__":
                 f"[{sample_phase+1}/{state.n_updates}]actor loss: {state.actor_losses[-1]}, critic_loss: {state.critic_losses[-1]}"
             )
 
-            cur_rewards = ep_rewards.sum()
-            if cur_rewards > state.best_rewards:
-                state.best_rewards = cur_rewards
+            if len(env.return_queue) != 0 and env.return_queue[-1] > state.best_rewards:
+                state.best_rewards = env.return_queue[-1]
                 state.best_agent = copy.deepcopy(agent.state_dict())
                 state.best_optim = copy.deepcopy(agent.optim.state_dict())
                 state.n_start = sample_phase

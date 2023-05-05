@@ -5,7 +5,7 @@ import torch
 import numpy as np
 
 if __name__ == "__main__":
-    pre_train = "20230505061217.pt"
+    pre_train = None
     use_cuda = False
 
     env = Env(use_odom=True)
