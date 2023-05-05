@@ -5,8 +5,7 @@ import torch
 import numpy as np
 
 if __name__ == "__main__":
-    pre_train = "20230502172814.pt"
-    use_rl = False  # 测试时是否使用强化学习辅助
+    pre_train = "20230505061217.pt"
     use_cuda = False
 
     env = Env(use_odom=True)
@@ -26,13 +25,18 @@ if __name__ == "__main__":
         critic_lr=1,
         actor_lr=1,
         random_rate=0,
-    )
+    )    
+    
+    if pre_train != None:
+        config = torch.load(pre_train)
+        agent.load_state_dict(config["best_agent"])
+    
     agent.eval()
     states, info = env.reset()
     rewards = []
     for i in range(100):
         action = 0
-        if use_rl:
+        if pre_train != None:
             actions, action_log_probs, state_value_preds, entropy = agent.select_action(
                 states
             )
