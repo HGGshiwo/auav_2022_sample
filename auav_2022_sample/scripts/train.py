@@ -156,6 +156,7 @@ if __name__ == "__main__":
         env.log("start train")
         env.log(f"actor_lr: {state.actor_lr}")
         env.log(f"critic_lr: {state.critic_lr}")
+        env.log(f"use {device} for trainning")
 
         for sample_phase in range(state.n_start, state.n_updates):
             # we don't have to reset the envs, they just continue playing

@@ -36,12 +36,12 @@ class A3C(nn.Module):
         """Initializes the actor and critic networks and their respective optimizers."""
         super().__init__()
         
-        n_features = 15 * 20 * 64
+        n_features = 4 * 6 * 8
         
         self.device = device
         self.n_actions = n_actions
         self.random_rate = random_rate
-        self.state_que = torch.zeros((10, n_features))
+        self.state_que = torch.zeros((5, n_features))
 
         
 
@@ -61,7 +61,10 @@ class A3C(nn.Module):
             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),  # (15, 20, 64)
-            nn.Flatten(0),                          # (19200)
+            nn.Conv2d(64, 8, kernel_size=(3, 2), stride=2, padding=(1, 2)),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (4, 6, 8)
+            nn.Flatten(0),                          # (192)
         ]
         
         
@@ -112,7 +115,7 @@ class A3C(nn.Module):
         """
         x = torch.Tensor(x).to(self.device)
         feature = self.backbone(x)
-        feature = feature.reshape((1,-1))    
+        feature = feature.reshape((1,-1))
         attn_output1, attn_output_weight = self.attention1(feature, self.state_que, self.state_que)
         x = attn_output1 + feature # 残差连接  
         attn_output2, attn_output_weight = self.attention2(x, self.state_que, self.state_que)
@@ -121,7 +124,7 @@ class A3C(nn.Module):
         action_logits_vec = self.actor(x)[0]  # shape: (n_actions, )
         
         # put the feature into the state que
-        self.state_que = torch.cat((self.state_que[1:], feature))
+        self.state_que = torch.cat((self.state_que[1:], feature.detach()))
         
         return (state_values, action_logits_vec)
 
