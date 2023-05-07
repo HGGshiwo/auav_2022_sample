@@ -20,10 +20,10 @@ class State:
         """
         self.pre_train = pre_train
         self.config = {
-            "actor_lr": 0.0001,
-            "critic_lr": 0.005,
+            "actor_lr": 0.00005,
+            "critic_lr": 0.0001,
             "random_rate": 0.3,
-            "n_updates": 800,
+            "n_updates": 1000,
             "n_steps_per_update": 4,
             "gamma": 0.999,
             "ent_coef": 0.01,  # coefficient for the entropy bonus (to encourage exploration)

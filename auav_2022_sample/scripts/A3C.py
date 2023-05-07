@@ -35,15 +35,13 @@ class A3C(nn.Module):
     ) -> None:
         """Initializes the actor and critic networks and their respective optimizers."""
         super().__init__()
-        
+
         n_features = 4 * 6 * 8
-        
+
         self.device = device
         self.n_actions = n_actions
         self.random_rate = random_rate
         self.state_que = torch.zeros((5, n_features))
-
-        
 
         backbone_layers = [
             nn.Conv2d(3, 8, kernel_size=3, stride=1, padding=1),
@@ -64,10 +62,9 @@ class A3C(nn.Module):
             nn.Conv2d(64, 8, kernel_size=(3, 2), stride=2, padding=(1, 2)),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),  # (4, 6, 8)
-            nn.Flatten(0),                          # (192)
+            nn.Flatten(0),  # (192)
         ]
-        
-        
+
         critic_layers = [
             nn.Linear(n_features, 32),
             nn.ReLU(),
@@ -90,15 +87,21 @@ class A3C(nn.Module):
         self.backbone = nn.Sequential(*backbone_layers).to(self.device)
         self.critic = nn.Sequential(*critic_layers).to(self.device)
         self.actor = nn.Sequential(*actor_layers).to(self.device)
-        self.attention1 = torch.nn.MultiheadAttention(n_features, 4, 0.2).to(self.device)
-        self.attention2 = torch.nn.MultiheadAttention(n_features, 4, 0.2).to(self.device)
+        self.attention1 = torch.nn.MultiheadAttention(n_features, 4, 0.2).to(
+            self.device
+        )
+        self.attention2 = torch.nn.MultiheadAttention(n_features, 4, 0.2).to(
+            self.device
+        )
 
         # define optimizers for actor and critic
         self.optim = optim.RMSprop(
             [
                 {"params": self.critic.parameters(), "lr": critic_lr},
                 {"params": self.actor.parameters(), "lr": actor_lr},
-                {"params": self.backbone.parameters()},
+                {"params": self.backbone.parameters(), "lr": actor_lr},
+                {"params": self.attention1.parameters(), "lr": actor_lr},
+                {"params": self.attention2.parameters(), "lr": actor_lr},
             ]
         )
 
@@ -115,17 +118,21 @@ class A3C(nn.Module):
         """
         x = torch.Tensor(x).to(self.device)
         feature = self.backbone(x)
-        feature = feature.reshape((1,-1))
-        attn_output1, attn_output_weight = self.attention1(feature, self.state_que, self.state_que)
-        x = attn_output1 + feature # 残差连接  
-        attn_output2, attn_output_weight = self.attention2(x, self.state_que, self.state_que)
-        x = attn_output2 + x # 残差连接
+        feature = feature.reshape((1, -1))
+        attn_output1, attn_output_weight = self.attention1(
+            feature, self.state_que, self.state_que
+        )
+        x = attn_output1 + feature  # 残差连接
+        attn_output2, attn_output_weight = self.attention2(
+            x, self.state_que, self.state_que
+        )
+        x = attn_output2 + x  # 残差连接
         state_values = self.critic(x)
         action_logits_vec = self.actor(x)[0]  # shape: (n_actions, )
-        
+
         # put the feature into the state que
         self.state_que = torch.cat((self.state_que[1:], feature.detach()))
-        
+
         return (state_values, action_logits_vec)
 
     def select_action(
