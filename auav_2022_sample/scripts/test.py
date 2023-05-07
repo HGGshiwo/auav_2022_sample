@@ -34,7 +34,7 @@ if __name__ == "__main__":
     agent.eval()
     states, info = env.reset()
     rewards = []
-    for i in range(100):
+    for i in range(250):
         action = 0
         if pre_train != None:
             actions, action_log_probs, state_value_preds, entropy = agent.select_action(

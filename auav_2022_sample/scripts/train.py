@@ -3,7 +3,7 @@ from Env import Env
 from A2C import A2C
 import torch
 import time
-from A2C import A2C
+from A3C import A3C
 import matplotlib.pyplot as plt
 import numpy as np
 import copy
@@ -32,7 +32,7 @@ class State:
             "actor_losses": [],
             "entropies": [],
             "return_queue": [],
-            "use_cuda": False,
+            "use_cuda": True,
             "n_start": 0,
             "best_rewards": 0,
             "best_agent": {},
@@ -141,7 +141,7 @@ if __name__ == "__main__":
             device = torch.device("cpu")
 
         # init the agent
-        agent = A2C(
+        agent = A3C(
             obs_shape,
             action_shape,
             device,
