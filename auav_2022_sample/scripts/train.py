@@ -20,8 +20,8 @@ class State:
         """
         self.pre_train = pre_train
         self.config = {
-            "actor_lr": 0.01,
-            "critic_lr": 0.5,
+            "actor_lr": 0.0001,
+            "critic_lr": 0.005,
             "random_rate": 0.3,
             "n_updates": 800,
             "n_steps_per_update": 4,
@@ -121,8 +121,6 @@ class State:
         plt.tight_layout()
 
         plt.savefig(f"{now_str}.png")
-
-        self.span = timedelta(seconds=self.start - end)
 
 
 if __name__ == "__main__":

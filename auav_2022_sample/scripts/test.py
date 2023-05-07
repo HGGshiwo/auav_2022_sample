@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 from Env import Env
 from A2C import A2C
+from A3C import A3C
 import torch
 import numpy as np
 
 if __name__ == "__main__":
-    pre_train = None
+    pre_train = "20230507101004.pt"
     use_cuda = False
 
     env = Env(use_odom=True)
@@ -18,7 +19,7 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-    agent = A2C(
+    agent = A3C(
         obs_shape,
         action_shape,
         device,
@@ -34,7 +35,7 @@ if __name__ == "__main__":
     agent.eval()
     states, info = env.reset()
     rewards = []
-    for i in range(250):
+    for i in range(100):
         action = 0
         if pre_train != None:
             actions, action_log_probs, state_value_preds, entropy = agent.select_action(
