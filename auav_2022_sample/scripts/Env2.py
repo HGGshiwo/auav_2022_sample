@@ -245,8 +245,7 @@ class Env(MavrosOffboardPosctl):
         d_separation = 1.0
         altitude = 0.5
 
-        # p_goal = rover - direction * d_separation
-        p_goal = rover
+        p_goal = rover - direction * d_separation
 
         yaw = np.arctan2(direction[1], direction[0])
 
