@@ -60,34 +60,10 @@ class A3C(nn.Module):
         """Initializes the actor and critic networks and their respective optimizers."""
         super().__init__()
 
-        n_features = 4 * 6 * 8
-
         self.device = device
         self.n_actions = n_actions
         self.random_rate = random_rate
         self.state_que = torch.zeros((5, n_features))
-
-        backbone_layers = [
-            nn.Conv2d(3, 8, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (240, 320, 8)
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (120, 160, 16)
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (60, 80, 32)
-            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (30, 40, 64),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (15, 20, 64)
-            nn.Conv2d(64, 8, kernel_size=(3, 2), stride=2, padding=(1, 2)),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # (4, 6, 8)
-            nn.Flatten(0),  # (192)
-        ]
 
         critic_layers = [
             nn.Linear(n_features, 32),
@@ -118,20 +94,17 @@ class A3C(nn.Module):
         ]
 
         # define actor and critic networks
-        self.backbone = nn.Sequential(*backbone_layers).to(self.device)
-
         self.critic_pre = nn.Sequential(*critic_pre_layers).to(self.device)
-        self.critic_atten = nn.MultiheadAttention(n_features, 4, 0.2).to(self.device)
+        self.critic_atten = nn.MultiheadAttention(n_features, 2, 0.2).to(self.device)
         self.critic_fc = nn.Sequential(*critic_layers).to(self.device)
 
         self.actor_pre = nn.Sequential(*actor_pre_layers).to(self.device)
-        self.actor_atten = nn.MultiheadAttention(n_features, 4, 0.2).to(self.device)
+        self.actor_atten = nn.MultiheadAttention(n_features, 2, 0.2).to(self.device)
         self.actor_fc = nn.Sequential(*actor_layers).to(self.device)
 
         # define optimizers for actor and critic
         self.optim = optim.Adam(
             [
-                {"params": self.backbone.parameters(), "lr": actor_lr * 1e-2},
                 {"params": self.critic_pre.parameters(), "lr": critic_lr},
                 {"params": self.critic_atten.parameters(), "lr": critic_lr},
                 {"params": self.critic_fc.parameters(), "lr": critic_lr},
@@ -153,30 +126,29 @@ class A3C(nn.Module):
             action_logits_vec: A tensor with the action logits, with shape [n_actions].
         """
         x = torch.Tensor(x).to(self.device)
-        feature = self.backbone(x)
-        feature = feature.reshape((1, -1))
+        x = x.reshape((1, -1))
 
-        critic_flow = self.critic_pre(feature)
+        # put the feature into the state que
+        self.state_que = torch.cat((self.state_que[1:], x.detach()))
+        
+        critic_flow = self.critic_pre(x)
         critic_flow, attn_output_weight = self.critic_atten(
             critic_flow, self.state_que, self.state_que
         )
-        critic_flow = critic_flow + feature  # KF-like
+        critic_flow = critic_flow + x  # KF-like
         state_values = self.critic_fc(critic_flow)
 
-        actor_flow = self.actor_pre(feature)
+        actor_flow = self.actor_pre(x)
         actor_flow, attn_output_weight = self.actor_atten(
             actor_flow, self.state_que, self.state_que
         )
-        actor_flow = actor_flow + feature  # KF-like
+        actor_flow = actor_flow + x  # KF-like
         action_logits_vec = self.actor_fc(actor_flow)[0]  # shape: (n_actions, )
-
-        # put the feature into the state que
-        self.state_que = torch.cat((self.state_que[1:], feature.detach()))
 
         return (state_values, action_logits_vec)
 
     def select_action(
-        self, x: np.ndarray, use_random=True
+        self, x: np.ndarray, use_random=False
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Returns a tuple of the chosen actions and the log-probs of those actions.

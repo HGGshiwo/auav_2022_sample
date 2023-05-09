@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-from Env import Env
+from Env2 import Env
 from A2C import A2C
+from A3Cv3 import A3C
 import torch
 import time
-from A3C import A3C
 import matplotlib.pyplot as plt
 import numpy as np
 import copy
@@ -20,8 +20,8 @@ class State:
         """
         self.pre_train = pre_train
         self.config = {
-            "actor_lr": 1e-5,
-            "critic_lr": 5e-5,
+            "actor_lr": 1e-3,
+            "critic_lr": 5e-4,
             "random_rate": 0.3,
             "n_updates": 800,
             "n_steps_per_update": 4,
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     with State(pre_train) as state:
         start = time.perf_counter()
         env = Env(use_odom=True)
-        obs_shape = env.obs.shape
+        obs_shape = env.obs_shape
         action_shape = len(env.actions)
 
         # set the device

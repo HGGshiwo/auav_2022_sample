@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 from Env import Env
 from A2C import A2C
-from A3C import A3C
+from A3Cv2 import A3C
 import torch
 import numpy as np
 
 if __name__ == "__main__":
-    pre_train = "20230507171304.pt"
+    pre_train = "20230509034206.pt"
     use_cuda = False
 
     env = Env(use_odom=True)
