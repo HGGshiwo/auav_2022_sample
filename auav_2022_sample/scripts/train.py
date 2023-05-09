@@ -20,8 +20,8 @@ class State:
         """
         self.pre_train = pre_train
         self.config = {
-            "actor_lr": 1e-5,
-            "critic_lr": 5e-4,
+            "actor_lr": 1e-4,
+            "critic_lr": 5e-3,
             "random_rate": 0.3,
             "n_updates": 800,
             "n_steps_per_update": 4,
