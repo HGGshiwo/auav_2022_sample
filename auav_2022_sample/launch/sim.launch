@@ -129,12 +129,12 @@
       <remap from="rover_finished" to="rover/finished"/>
     </node> -->
     <group if="$(arg use_train)">
-      <node name="offboard_node" pkg="auav_2022_sample" type="train.py" output="log" launch-prefix="xterm -T 'train' -e">
+      <node name="offboard_node" pkg="auav_2022_sample" type="train2.py" output="log" launch-prefix="xterm -T 'train' -e">
         <remap from="rover_finished" to="rover/finished"/>
       </node>
     </group>
     <group unless="$(arg use_train)">
-      <node name="offboard_node" pkg="auav_2022_sample" type="test.py" output="log" launch-prefix="xterm -T 'test' -e">
+      <node name="offboard_node" pkg="auav_2022_sample" type="test2.py" output="log" launch-prefix="xterm -T 'test' -e">
         <remap from="rover_finished" to="rover/finished"/>
       </node>
     </group>

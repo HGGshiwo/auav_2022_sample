@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-from Env2 import Env
+from Env3 import Env
 from A2C import A2C
 from A3Cv3 import A3C
 import torch
 import numpy as np
 
 if __name__ == "__main__":
-    pre_train = "20230509114043.pt"
+    pre_train = None
     use_cuda = False
-
+    use_kf = False
+    
     env = Env(use_odom=True)
     obs_shape = env.obs_shape
     action_shape = len(env.actions)

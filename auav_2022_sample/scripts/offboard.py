@@ -194,7 +194,7 @@ class MavrosOffboardPosctl(object):
         simulation_ready = False
         while not rospy.is_shutdown():
             for sub_topic in self.sub_topics_ready.keys():
-                rospy.loginfo_throttle(10, '%s ready: %d', sub_topic, self.sub_topics_ready[sub_topic])
+                rospy.loginfo('%s ready: %d', sub_topic, self.sub_topics_ready[sub_topic])
             if all(value for value in self.sub_topics_ready.values()):
                 simulation_ready = True
                 rospy.loginfo("simulation topics ready")
@@ -275,12 +275,6 @@ class MavrosOffboardPosctl(object):
         self.pos.pose.position.x = x
         self.pos.pose.position.y = y
         self.pos.pose.position.z = z
-
-        euler_current = euler_from_quaternion(
-                [self.local_position.pose.orientation.x,
-                self.local_position.pose.orientation.y,
-                self.local_position.pose.orientation.z,
-                self.local_position.pose.orientation.w], axes='rzyx')
 
         # For demo purposes we will lock yaw/heading to north.
         yaw = math.radians(yaw_deg)
