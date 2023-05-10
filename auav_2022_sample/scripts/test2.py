@@ -72,5 +72,5 @@ class Test(Env):
 
 
 if __name__ == "__main__":
-    pre_train = "20230510094541.pt"
+    pre_train = "20230510121617.pt"
     Test(pre_train=pre_train, use_odom=True, use_KF=False, use_cuda=True)

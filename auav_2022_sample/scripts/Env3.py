@@ -256,9 +256,9 @@ class Env(MavrosOffboardPosctl):
         self.drone_pos = np.array([data.pose.position.x, data.pose.position.y])
 
     def reset(self):
-        self.rewards = 0
+        # self.rewards = 0
         self.terminated = False
-        self.score = 0
+        # self.score = 0
 
     def start_sending_position_setpoint(self):
         self.pos_thread.start()
