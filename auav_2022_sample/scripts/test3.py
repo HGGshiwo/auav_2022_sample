@@ -40,18 +40,18 @@ class Test(Env):
                 self.obs_shape,
                 self.action_shape,
                 self.device,
-                self.critic_lr,
-                self.actor_lr,
-                self.random_rate,
+                critic_lr=1,
+                actor_lr=1,
+                random_rate=0,
             )
         else:
             self.agent = A3Cv3(
                 self.obs_shape,
                 self.action_shape,
                 self.device,
-                self.critic_lr,
-                self.actor_lr,
-                self.random_rate,
+                critic_lr=1,
+                actor_lr=1,
+                random_rate=0,
             )
 
         if pre_train != None:
@@ -100,7 +100,7 @@ class Test(Env):
 
 
 if __name__ == "__main__":
-    pre_train = "20230511122504.pt"
+    pre_train = "20230511143356.pt"
     state_mode = "pos"
     action_mode = "pos"
     Test(pre_train=pre_train, use_odom=True, use_KF=False, use_cuda=True, state_mode=state_mode, action_mode=action_mode)
