@@ -3,7 +3,7 @@
 # 进行一些数据采集
 from offboard import MavrosOffboardPosctl
 import rospy
-from geometry_msgs.msg import PoseStamped, PointStamped, Vector3Stamped, TwistStamped
+from geometry_msgs.msg import PoseStamped, PointStamped, Vector3Stamped, Twist, TwistStamped
 from mavros_msgs.msg import ExtendedState, State, Thrust
 from mavros_msgs.srv import (
     ParamGet,
@@ -91,6 +91,7 @@ class Env(MavrosOffboardPosctl):
         self.drone_poses = []  # 记录一个episode中飞机的位置
         self.distances = []  # 记录一个episode中两者的距离
         self.drone_vels = []  # 记录无人机的速度变化图
+        self.rover_vels = []
         self.first_episode = True  # 只采集第一个episode中的数据
 
         self.sub_topics_ready = {
@@ -153,8 +154,11 @@ class Env(MavrosOffboardPosctl):
         self.finished_sub = rospy.Subscriber(
             "/rover/finished", Bool, self.finished_callback
         )
-        self.vel_sub = rospy.Subscriber(
-            "mavros/local_position/velocity", TwistStamped, self.vel_callback
+        self.drone_vel_sub = rospy.Subscriber(
+            "mavros/local_position/velocity_local", TwistStamped, self.drone_vel_callback
+        )
+        self.rover_vel_sub = rospy.Subscriber(
+            "/rover/cmd_vel", Twist, self.rover_vel_callback
         )
         self.ready_pub = rospy.Publisher("ready", Bool, queue_size=10)
         self.pos_setpoint_pub = rospy.Publisher(
@@ -267,6 +271,7 @@ class Env(MavrosOffboardPosctl):
             data["rover_poses"] = self.rover_poses
             data["drone_poses"] = self.drone_poses
             data["distances"] = self.distances
+            data["rover_vels"] = self.rover_vels
             json.dump(data, f)
 
     def finished_callback(self, msg):
@@ -388,9 +393,13 @@ class Env(MavrosOffboardPosctl):
         self.height = data.pose.position.z
         self.drone_poses.append([data.pose.position.x, data.pose.position.y])
 
-    def vel_callback(self, msg):
+    def drone_vel_callback(self, msg):
         vel = [msg.twist.linear.x, msg.twist.linear.y]
         self.drone_vels.append(vel)
+
+    def rover_vel_callback(self, msg):
+        vel = [msg.linear.x, msg.linear.y]
+        self.rover_vels.append(vel)
 
     def reset(self):
         # self.rewards = 0
