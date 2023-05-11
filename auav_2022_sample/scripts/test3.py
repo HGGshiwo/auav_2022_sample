@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from Env5 import Env
 from A2C import A2C
-from A3Cv3 import A3Cv3
+from A3Cv3 import A3C as A3Cv3
 import torch
 import numpy as np
 

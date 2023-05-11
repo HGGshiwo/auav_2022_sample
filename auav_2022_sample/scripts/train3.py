@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 from Env5 import Env
 from A2C import A2C  # take img for state, not use attention
-from A3Cv2 import A3Cv2  # take img for state, use attention
-from A3Cv3 import A3Cv3  # take pos for state, use attention
+from A3Cv2 import A3C as A3Cv2  # take img for state, use attention
+from A3Cv3 import A3C as A3Cv3  # take pos for state, use attention
 import torch
 import time
 import matplotlib.pyplot as plt
@@ -41,7 +41,7 @@ class Train(Env):
             "actor_lr": 1e-4,
             "critic_lr": 5e-3,
             "random_rate": 0.3,
-            "n_updates": 10000,
+            "n_updates": 5000,
             "n_steps_per_update": 2,
             "gamma": 0.999,
             "ent_coef": 0.01,  # coefficient for the entropy bonus (to encourage exploration)

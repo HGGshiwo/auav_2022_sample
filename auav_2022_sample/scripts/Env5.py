@@ -183,11 +183,13 @@ class Env(MavrosOffboardPosctl):
         while not rospy.is_shutdown():
             self.pos.header.stamp = rospy.Time.now()
             self.vel.header.stamp = rospy.Time.now()
-
-            if np.abs(self.height - 0.5) > 0.1:
-                self.pos_setpoint_pub.publish(self.pos)
+            if self.action_mode == "vel":
+                if np.abs(self.height - 0.5) > 0.1:
+                    self.pos_setpoint_pub.publish(self.pos)
+                else:
+                    self.setpoint_vel_pub.publish(self.vel)
             else:
-                self.setpoint_vel_pub.publish(self.vel)
+                self.pos_setpoint_pub.publish(self.pos)
             try:
                 rate.sleep()
             except rospy.ROSInterruptException:
@@ -227,7 +229,7 @@ class Env(MavrosOffboardPosctl):
             d_separation = 1.0
             altitude = 0.5
 
-            p_goal = self.rover - cor_direction * d_separation
+            p_goal = self.rover_pos - cor_direction * d_separation
 
             yaw = np.arctan2(cor_direction[1],cor_direction[0])
 
@@ -353,7 +355,7 @@ class Env(MavrosOffboardPosctl):
         self.rover_pos = np.array([rover_pos.x, rover_pos.y])
         self.rover_poses.append([rover_pos.x, rover_pos.y])
         
-        if self.state_mode != "img":
+        if self.state_mode != "pos":
             return
         
         if self.use_KF:
