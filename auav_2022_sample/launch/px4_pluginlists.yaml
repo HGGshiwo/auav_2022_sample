@@ -11,4 +11,7 @@ plugin_whitelist:
 - setpoint_position
 - altitude
 - time 
+- setpoint_velocity
+- setpoint_accel
+- setpoint_attitude
 #- waypoint

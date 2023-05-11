@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from Env3 import Env
+from Env4 import Env
 from A2C import A2C
 from A3Cv3 import A3C
 import torch
@@ -72,5 +72,5 @@ class Test(Env):
 
 
 if __name__ == "__main__":
-    pre_train = "20230510121617.pt"
+    pre_train = "20230511091806.pt"
     Test(pre_train=pre_train, use_odom=True, use_KF=False, use_cuda=True)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from Env3 import Env
+from Env4 import Env
 from A2C import A2C
 from A3Cv3 import A3C
 import torch
@@ -25,7 +25,7 @@ class Train(Env):
             "actor_lr": 1e-4,
             "critic_lr": 5e-3,
             "random_rate": 0.3,
-            "n_updates": 10000,
+            "n_updates": 2000,
             "n_steps_per_update": 2,
             "gamma": 0.999,
             "ent_coef": 0.01,  # coefficient for the entropy bonus (to encourage exploration)
