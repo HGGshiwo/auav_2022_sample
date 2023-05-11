@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-from Env4 import Env
-from A2C import A2C
-from A3Cv3 import A3C
+from Env5 import Env
+from A2C import A2C  # take img for state, not use attention
+from A3Cv2 import A3Cv2  # take img for state, use attention
+from A3Cv3 import A3Cv3  # take pos for state, use attention
 import torch
 import time
 import matplotlib.pyplot as plt
@@ -11,14 +12,29 @@ from datetime import timedelta
 
 
 class Train(Env):
-    def __init__(self, pre_train) -> None:
+    def __init__(
+        self,
+        pre_train,
+        use_odom=True,
+        use_KF=False,
+        use_RL=True,
+        state_mode="img",
+        action_mode="vel",
+    ) -> None:
         """
         Record the model data
 
         Args:
             pre_train:       pre_trained model path. Set to None if not use pretrain.
         """
-        Env.__init__(self, use_odom=True)
+        Env.__init__(
+            self,
+            use_odom=use_odom,
+            use_KF=use_KF,
+            use_RL=use_RL,
+            state_mode=state_mode,
+            action_mode=action_mode,
+        )
         self.agent_ready = False
         self.pre_train = pre_train
         self.config = {
@@ -70,8 +86,6 @@ class Train(Env):
         self.best_optim = self.config["best_optim"]
 
         self.start = time.perf_counter()
-        obs_shape = self.obs_shape
-        action_shape = len(self.actions)
 
         # set the device
         if self.use_cuda:
@@ -87,14 +101,25 @@ class Train(Env):
         self.entropy = None
         self.masks = torch.zeros(self.n_steps_per_update)
 
-        self.agent = A3C(
-            obs_shape,
-            action_shape,
-            self.device,
-            self.critic_lr,
-            self.actor_lr,
-            self.random_rate,
-        )
+        self.agent = None
+        if self.state_mode == "img":
+            self.agent = A2C(
+                self.obs_shape,
+                self.action_shape,
+                self.device,
+                self.critic_lr,
+                self.actor_lr,
+                self.random_rate,
+            )
+        else:
+            self.agent = A3Cv3(
+                self.obs_shape,
+                self.action_shape,
+                self.device,
+                self.critic_lr,
+                self.actor_lr,
+                self.random_rate,
+            )
 
         if pre_train != None:
             self.agent.load_state_dict(self.best_agent)
@@ -103,11 +128,11 @@ class Train(Env):
         self.log("start train")
         self.log(f"actor_lr: {self.actor_lr} critic_lr: {self.critic_lr}")
         self.log(f"use {self.device} for trainning")
-        
+
         # tell rover and referee it can go
         self.sleep(10)
         self.ready_pub.publish(True)
-        
+
         self.agent_ready = True
         self.spin()
 
@@ -248,6 +273,14 @@ class Train(Env):
 
 if __name__ == "__main__":
     pre_train = None
-
+    state_mode = "pos"
+    action_mode = "pos"
     # wait until train end.
-    train = Train(pre_train)
+    Train(
+        pre_train,
+        use_odom=True,
+        use_KF=False,
+        use_RL=True,
+        state_mode=state_mode,
+        action_mode=action_mode,
+    )

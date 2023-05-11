@@ -23,7 +23,7 @@ class State:
             "actor_lr": 1e-4,
             "critic_lr": 5e-3,
             "random_rate": 0.3,
-            "n_updates": 1600,
+            "n_updates": 5000,
             "n_steps_per_update": 2,
             "gamma": 0.999,
             "ent_coef": 0.01,  # coefficient for the entropy bonus (to encourage exploration)

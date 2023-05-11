@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+# 进行一些数据采集
 from offboard import MavrosOffboardPosctl
 import rospy
 from geometry_msgs.msg import PoseStamped, PointStamped, Vector3Stamped, TwistStamped
@@ -20,23 +22,57 @@ import numpy as np
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, CameraInfo
 from filterpy.kalman import KalmanFilter
+import time
+import json
+
 
 class Env(MavrosOffboardPosctl):
-    def __init__(self, use_odom=True, use_KF=False, use_RL=True):
+    def __init__(
+        self,
+        use_odom=True,
+        use_KF=False,
+        use_RL=True,
+        verbose=False,
+        state_mode="pos",
+        action_mode="vel",
+    ):
+        """init for Env
+        use_odom:   use true position of rover if True
+        use_KF:     use kalman filter for rover position estimation
+        use_RL:     use rl output
+        verbose:    output first episode data if True
+        state_mode:   choose state space, use position if "pos", use image if "img"
+        action_mode:    choose action space, use velocity control if "vel", use position control if "pos"
+        """
         rospy.init_node("offboard_node")
         self.use_odom = use_odom  # whether to use real position of rover
         self.rewards = 0
         self.terminated = False
         self.score = 0
         self.env_ready = False
-        self.obs_shape = 10  # 为了读取shape
+        
         self.use_KF = use_KF
         self.kf = KalmanFilter(dim_x=2, dim_z=2)
-        actions = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-        # for i in range(1, 11):
-        #     actions.extend([-0.1 * i, 0.1 * i])
-        self.actions = np.array(actions, dtype=np.float64)
+        self.verbose = verbose
+        self.action_mode = action_mode
+        self.state_mode = state_mode
 
+        self.actions = None
+        if self.action_mode == "vel":
+            actions = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            self.actions = np.array(actions, dtype=np.float64)
+        else:
+            actions = [[0, 0]]
+            for i in range(2, 7):
+                actions.extend([[-0.2 * i, 0], [0.2 * i, 0], [0, 0.2 * i], [0, -0.2 * i]])
+            self.actions = np.array(actions, dtype=np.float64)
+
+        self.action_shape = len(self.actions)
+        self.obs_shape = None # 为了读取shape
+        if self.state_mode == "img":
+            self.obs_shape = (3, 480, 640)
+        else:
+            self.obs_shape = 10
         self.return_queue = []  # 记录下每个episode的return
         self.bridge = CvBridge()
         self.extended_state = ExtendedState()
@@ -50,7 +86,13 @@ class Env(MavrosOffboardPosctl):
         self.radius = 0.1
         self.height = 0
         self.use_RL = use_RL
-        
+
+        self.rover_poses = []  # 记录一个episode中小车的位置
+        self.drone_poses = []  # 记录一个episode中飞机的位置
+        self.distances = []  # 记录一个episode中两者的距离
+        self.drone_vels = []  # 记录无人机的速度变化图
+        self.first_episode = True  # 只采集第一个episode中的数据
+
         self.sub_topics_ready = {
             key: False
             for key in [
@@ -111,6 +153,9 @@ class Env(MavrosOffboardPosctl):
         self.finished_sub = rospy.Subscriber(
             "/rover/finished", Bool, self.finished_callback
         )
+        self.vel_sub = rospy.Subscriber(
+            "mavros/local_position/velocity", TwistStamped, self.vel_callback
+        )
         self.ready_pub = rospy.Publisher("ready", Bool, queue_size=10)
         self.pos_setpoint_pub = rospy.Publisher(
             "mavros/setpoint_position/local", PoseStamped, queue_size=1
@@ -129,7 +174,7 @@ class Env(MavrosOffboardPosctl):
 
     def send_pos(self):
         rate = rospy.Rate(10)  # Hz
-        
+
         self.pos.header = Header()
         self.pos.header.frame_id = "drone"
         self.vel.header = Header()
@@ -137,10 +182,10 @@ class Env(MavrosOffboardPosctl):
 
         while not rospy.is_shutdown():
             self.pos.header.stamp = rospy.Time.now()
-            self.vel.header.stamp = rospy.Time.now()          
-            
+            self.vel.header.stamp = rospy.Time.now()
+
             if np.abs(self.height - 0.5) > 0.1:
-                self.pos_setpoint_pub.publish(self.pos)  
+                self.pos_setpoint_pub.publish(self.pos)
             else:
                 self.setpoint_vel_pub.publish(self.vel)
             try:
@@ -152,10 +197,57 @@ class Env(MavrosOffboardPosctl):
         """Callback from camera projetion"""
         self.camera_info = msg
 
+    def do_action(self, action): 
+        direction = self.rover_pos - self.drone_pos
+        self.distances.append(np.linalg.norm(direction).item())
+
+        if self.action_mode == "vel":
+            a_goal = self.actions[action] if self.use_RL else 0.6
+            d_separation = 1
+            altitude = 0.5
+            norm_direction = direction / np.linalg.norm(direction)
+            p_goal = self.rover_pos - norm_direction * d_separation
+
+            yaw = np.arctan2(direction[1], direction[0])
+            self.goto_position(p_goal[0], p_goal[1], altitude, np.rad2deg(yaw))
+
+            if np.linalg.norm(direction) < 1:
+                self.vel.twist.linear.x = 0
+                self.vel.twist.linear.y = 0
+                self.vel.twist.linear.z = 0
+            else:
+                self.vel.twist.linear.x = a_goal * norm_direction[0]
+                self.vel.twist.linear.y = a_goal * norm_direction[1]
+                self.vel.twist.linear.z = 0
+        else:
+            # 使用位置进行控制
+            cor_direction = direction + self.actions[action] # direction after correct
+            cor_direction /= np.linalg.norm(cor_direction)
+
+            d_separation = 1.0
+            altitude = 0.5
+
+            p_goal = self.rover - cor_direction * d_separation
+
+            yaw = np.arctan2(cor_direction[1],cor_direction[0])
+
+            self.goto_position(
+                x=p_goal[0], y=p_goal[1], z=altitude, yaw_deg=np.rad2deg(yaw)
+            )
+
     def image_callback(self, msg):
         if self.camera_info is None:
             rospy.logerr("no camera info")
             return
+
+        if self.state_mode != "img":
+            return
+        
+        obs = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        obs = np.array(obs).transpose((2, 0, 1))  # 3*480*640
+
+        action = self.onState(obs)
+        self.do_action(action)
 
     def reward_callback(self, msg):
         self.rewards = msg.data
@@ -163,11 +255,26 @@ class Env(MavrosOffboardPosctl):
     def return_callback(self, msg):
         self.score = msg.data
 
+    def dump_data(self):
+        """save data for paper fig"""
+        now = int(round(time.time() * 1000))
+        now_str = time.strftime("%Y%m%d%H%M%S", time.localtime(now / 1000))
+        with open(f"{now_str}.json", "w") as f:
+            data = {}
+            data["drone_vels"] = self.drone_vels
+            data["rover_poses"] = self.rover_poses
+            data["drone_poses"] = self.drone_poses
+            data["distances"] = self.distances
+            json.dump(data, f)
+
     def finished_callback(self, msg):
         self.terminated = msg.data
         if self.terminated:
             self.return_queue.append(self.score)
             self.reset()  # auto reset
+            if self.first_episode and self.verbose:
+                self.dump_data()
+                self.first_episode = False
 
     def wait_for_offborad(self):
         last_req = rospy.Time.now()
@@ -241,11 +348,14 @@ class Env(MavrosOffboardPosctl):
         rospy.logwarn("wait for the drone go to the initial position")
         self.goto_position(0, 0, 0.5, 0)
 
-
     def rover_pos_callback(self, msg):
         rover_pos = msg.pose.pose.position if self.use_odom else msg.point
         self.rover_pos = np.array([rover_pos.x, rover_pos.y])
-
+        self.rover_poses.append([rover_pos.x, rover_pos.y])
+        
+        if self.state_mode != "img":
+            return
+        
         if self.use_KF:
             self.kf.predict()
             self.rover_pos = self.kf.x
@@ -266,25 +376,7 @@ class Env(MavrosOffboardPosctl):
         obs[9] = self.imu_data.linear_acceleration.y
 
         action = self.onState(obs)
-        a_goal = self.actions[action] if self.use_RL else 0.6
-        d_separation = 1
-        
-        altitude = 0.5    
-        norm_direction = direction/np.linalg.norm(direction)
-        p_goal = self.rover_pos - norm_direction * d_separation
-        
-        yaw = np.arctan2(direction[1], direction[0])
-        self.goto_position(p_goal[0], p_goal[1], altitude, np.rad2deg(yaw))
-        
-
-        if np.linalg.norm(direction) < 1:
-            self.vel.twist.linear.x = 0
-            self.vel.twist.linear.y = 0
-            self.vel.twist.linear.z = 0
-        else:
-            self.vel.twist.linear.x = a_goal * norm_direction[0]
-            self.vel.twist.linear.y = a_goal * norm_direction[1]
-            self.vel.twist.linear.z = 0
+        self.do_action(action)
 
     def local_position_callback(self, data: PoseStamped):
         if not self.sub_topics_ready["local_pos"]:
@@ -292,9 +384,11 @@ class Env(MavrosOffboardPosctl):
 
         self.drone_pos = np.array([data.pose.position.x, data.pose.position.y])
         self.height = data.pose.position.z
+        self.drone_poses.append([data.pose.position.x, data.pose.position.y])
 
-    # def vel_callback(self, msg):
-    #     self.drone_vel = msg
+    def vel_callback(self, msg):
+        vel = [msg.twist.linear.x, msg.twist.linear.y]
+        self.drone_vels.append(vel)
 
     def reset(self):
         # self.rewards = 0
