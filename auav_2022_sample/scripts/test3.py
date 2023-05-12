@@ -100,7 +100,7 @@ class Test(Env):
 
 
 if __name__ == "__main__":
-    pre_train = "20230511143356.pt"
+    pre_train = "20230511122504.pt"
     state_mode = "pos"
-    action_mode = "pos"
+    action_mode = "vel"
     Test(pre_train=pre_train, use_odom=True, use_KF=False, use_cuda=True, state_mode=state_mode, action_mode=action_mode)

@@ -394,11 +394,11 @@ class Env(MavrosOffboardPosctl):
         self.drone_poses.append([data.pose.position.x, data.pose.position.y])
 
     def drone_vel_callback(self, msg):
-        vel = [msg.twist.linear.x, msg.twist.linear.y]
+        vel = [rospy.Time.now().secs, msg.twist.linear.x, msg.twist.linear.y]
         self.drone_vels.append(vel)
 
     def rover_vel_callback(self, msg):
-        vel = [msg.linear.x, msg.linear.y]
+        vel = [rospy.Time.now().secs, msg.linear.x, msg.linear.y]
         self.rover_vels.append(vel)
 
     def reset(self):
