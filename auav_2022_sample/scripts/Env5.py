@@ -227,7 +227,9 @@ class Env(MavrosOffboardPosctl):
                 self.vel.twist.linear.z = 0
         else:
             # 使用位置进行控制
-            cor_direction = direction + self.actions[action] # direction after correct
+            # direction after correct
+            cor_direction = direction + self.actions[action] if self.use_RL else direction
+                
             cor_direction /= np.linalg.norm(cor_direction)
 
             d_separation = 1.0

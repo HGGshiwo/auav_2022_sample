@@ -27,7 +27,7 @@ class Test(Env):
         )
         self.agent_ready = False
         self.pre_train = pre_train
-        
+
         # set the device
         if use_cuda:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -100,7 +100,15 @@ class Test(Env):
 
 
 if __name__ == "__main__":
-    pre_train = "20230511122504.pt"
-    state_mode = "pos"
+    pre_train = None
+    state_mode = "img"
     action_mode = "vel"
-    Test(pre_train=pre_train, use_odom=True, use_KF=False, use_cuda=True, state_mode=state_mode, action_mode=action_mode)
+    Test(
+        pre_train=pre_train,
+        use_odom=True,
+        use_KF=False,
+        use_cuda=True,
+        use_RL=False,
+        state_mode=state_mode,
+        action_mode=action_mode,
+    )

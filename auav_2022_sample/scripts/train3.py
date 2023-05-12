@@ -273,7 +273,7 @@ class Train(Env):
 
 if __name__ == "__main__":
     pre_train = None
-    state_mode = "pos"
+    state_mode = "img"
     action_mode = "pos"
     # wait until train end.
     Train(
