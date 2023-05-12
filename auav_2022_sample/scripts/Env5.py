@@ -280,7 +280,7 @@ class Env(MavrosOffboardPosctl):
         if self.terminated:
             self.return_queue.append(self.score)
             self.reset()  # auto reset
-            if self.episode_num == 0 and self.verbose:
+            if self.episode_num == 1 and self.verbose:
                 self.dump_data()
             self.episode_num += 1
 
@@ -360,8 +360,7 @@ class Env(MavrosOffboardPosctl):
         rover_pos = msg.pose.pose.position if self.use_odom else msg.point
         self.rover_pos = np.array([rover_pos.x, rover_pos.y])
         
-        if self.episode_num == 0:
-            self.rover_poses.append([rover_pos.x, rover_pos.y])
+        self.rover_poses.append([rover_pos.x, rover_pos.y])
         
         
         if self.use_KF:
@@ -371,8 +370,8 @@ class Env(MavrosOffboardPosctl):
 
         direction = self.rover_pos - self.drone_pos    
         distance = np.linalg.norm([direction[0], direction[1], self.height]).item()
-        if self.episode_num == 0:
-            self.distances.append([rospy.Time.now().secs, distance])
+
+        self.distances.append([rospy.Time.now().secs, distance])
 
         if self.state_mode != "pos":
             return
@@ -398,18 +397,15 @@ class Env(MavrosOffboardPosctl):
 
         self.drone_pos = np.array([data.pose.position.x, data.pose.position.y])
         self.height = data.pose.position.z
-        if self.episode_num == 0:
-            self.drone_poses.append([data.pose.position.x, data.pose.position.y])
+        self.drone_poses.append([data.pose.position.x, data.pose.position.y])
 
     def drone_vel_callback(self, msg):
         vel = [rospy.Time.now().secs, msg.twist.linear.x, msg.twist.linear.y]
-        if self.episode_num == 0:
-            self.drone_vels.append(vel)
+        self.drone_vels.append(vel)
 
     def rover_vel_callback(self, msg):
         vel = [rospy.Time.now().secs, msg.linear.x, msg.linear.y]
-        if self.episode_num == 0:
-            self.rover_vels.append(vel)
+        self.rover_vels.append(vel)
 
     def reset(self):
         # self.rewards = 0
