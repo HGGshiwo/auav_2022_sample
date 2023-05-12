@@ -92,7 +92,7 @@ class Env(MavrosOffboardPosctl):
         self.distances = []  # 记录一个episode中两者的距离
         self.drone_vels = []  # 记录无人机的速度变化图
         self.rover_vels = []
-        self.first_episode = True  # 只采集第一个episode中的数据
+        self.episode_num = 0  # 从第二个episode开始采集
 
         self.sub_topics_ready = {
             key: False
@@ -205,8 +205,7 @@ class Env(MavrosOffboardPosctl):
 
     def do_action(self, action): 
         direction = self.rover_pos - self.drone_pos
-        self.distances.append(np.linalg.norm(direction).item())
-
+        
         if self.action_mode == "vel":
             a_goal = self.actions[action] if self.use_RL else 0.6
             d_separation = 1
@@ -281,9 +280,9 @@ class Env(MavrosOffboardPosctl):
         if self.terminated:
             self.return_queue.append(self.score)
             self.reset()  # auto reset
-            if self.first_episode and self.verbose:
+            if self.episode_num == 0 and self.verbose:
                 self.dump_data()
-                self.first_episode = False
+            self.episode_num += 1
 
     def wait_for_offborad(self):
         last_req = rospy.Time.now()
@@ -360,17 +359,23 @@ class Env(MavrosOffboardPosctl):
     def rover_pos_callback(self, msg):
         rover_pos = msg.pose.pose.position if self.use_odom else msg.point
         self.rover_pos = np.array([rover_pos.x, rover_pos.y])
-        self.rover_poses.append([rover_pos.x, rover_pos.y])
         
-        if self.state_mode != "pos":
-            return
+        if self.episode_num == 0:
+            self.rover_poses.append([rover_pos.x, rover_pos.y])
+        
         
         if self.use_KF:
             self.kf.predict()
             self.rover_pos = self.kf.x
             self.kf.update(self.rover_pos)
 
-        direction = self.rover_pos - self.drone_pos
+        direction = self.rover_pos - self.drone_pos    
+        distance = np.linalg.norm([direction[0], direction[1], self.height]).item()
+        if self.episode_num == 0:
+            self.distances.append([rospy.Time.now().secs, distance])
+
+        if self.state_mode != "pos":
+            return
 
         obs = np.zeros((10,))
         obs[0] = direction[0]
@@ -393,15 +398,18 @@ class Env(MavrosOffboardPosctl):
 
         self.drone_pos = np.array([data.pose.position.x, data.pose.position.y])
         self.height = data.pose.position.z
-        self.drone_poses.append([data.pose.position.x, data.pose.position.y])
+        if self.episode_num == 0:
+            self.drone_poses.append([data.pose.position.x, data.pose.position.y])
 
     def drone_vel_callback(self, msg):
         vel = [rospy.Time.now().secs, msg.twist.linear.x, msg.twist.linear.y]
-        self.drone_vels.append(vel)
+        if self.episode_num == 0:
+            self.drone_vels.append(vel)
 
     def rover_vel_callback(self, msg):
         vel = [rospy.Time.now().secs, msg.linear.x, msg.linear.y]
-        self.rover_vels.append(vel)
+        if self.episode_num == 0:
+            self.rover_vels.append(vel)
 
     def reset(self):
         # self.rewards = 0

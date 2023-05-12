@@ -71,11 +71,10 @@ class Test(Env):
         self.spin()
 
     def onState(self, states):
-        total_num = 1000
         if not self.env_ready or not self.agent_ready:
             return 0
 
-        if self.sample_phase == total_num:
+        if self.episode_num > 1:
             self.log(
                 f"Test end with average reward: {np.array(self.test_rewards).mean()}"
             )
@@ -85,7 +84,7 @@ class Test(Env):
         action = 0
         rewards = self.rewards
         self.test_rewards.append(rewards)
-        self.log(f"[{self.sample_phase}/{total_num}]get reward {rewards}")
+        self.log(f"get reward {rewards}")
         if self.pre_train != None:
             (
                 actions,
@@ -101,7 +100,7 @@ class Test(Env):
 
 if __name__ == "__main__":
     pre_train = None
-    state_mode = "img"
+    state_mode = "pos"
     action_mode = "vel"
     Test(
         pre_train=pre_train,
