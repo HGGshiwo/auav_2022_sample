@@ -99,7 +99,7 @@ class Test(Env):
 
 
 if __name__ == "__main__":
-    pre_train = None
+    pre_train = "20230513082346.pt"
     state_mode = "pos"
     action_mode = "vel"
     Test(
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         use_odom=True,
         use_KF=False,
         use_cuda=True,
-        use_RL=False,
+        use_RL=True,
         state_mode=state_mode,
         action_mode=action_mode,
     )

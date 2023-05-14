@@ -83,32 +83,26 @@ class A3C(nn.Module):
             ),  # estimate action logits (will be fed into a softmax later)
         ]
 
-        critic_pre_layers = [
-            PositionalEncoding(n_features),
-            nn.LayerNorm(n_features),
-        ]
-
-        actor_pre_layers = [
-            PositionalEncoding(n_features),
-            nn.LayerNorm(n_features),
-        ]
-
         # define actor and critic networks
-        self.critic_pre = nn.Sequential(*critic_pre_layers).to(self.device)
+        self.critic_norm = nn.LayerNorm(n_features).to(self.device)
+        self.critic_pos = PositionalEncoding(n_features).to(self.device)
         self.critic_atten = nn.MultiheadAttention(n_features, 2, 0.2).to(self.device)
         self.critic_fc = nn.Sequential(*critic_layers).to(self.device)
 
-        self.actor_pre = nn.Sequential(*actor_pre_layers).to(self.device)
+        self.actor_norm = nn.LayerNorm(n_features).to(self.device)
+        self.actor_pos = PositionalEncoding(n_features).to(self.device)
         self.actor_atten = nn.MultiheadAttention(n_features, 2, 0.2).to(self.device)
         self.actor_fc = nn.Sequential(*actor_layers).to(self.device)
 
         # define optimizers for actor and critic
         self.optim = optim.Adam(
             [
-                {"params": self.critic_pre.parameters(), "lr": critic_lr},
+                {"params": self.critic_norm.parameters(), "lr": critic_lr},
+                {"params": self.critic_pos.parameters(), "lr": critic_lr},
                 {"params": self.critic_atten.parameters(), "lr": critic_lr},
                 {"params": self.critic_fc.parameters(), "lr": critic_lr},
-                {"params": self.actor_pre.parameters(), "lr": actor_lr},
+                {"params": self.actor_norm.parameters(), "lr": actor_lr},
+                {"params": self.actor_pos.parameters(), "lr": actor_lr},
                 {"params": self.actor_atten.parameters(), "lr": actor_lr},
                 {"params": self.actor_fc.parameters(), "lr": actor_lr},
             ]
@@ -131,14 +125,16 @@ class A3C(nn.Module):
         # put the feature into the state que
         self.state_que = torch.cat((self.state_que[1:], x.detach()))
         
-        critic_flow = self.critic_pre(x)
+        critic_flow = self.state_que + self.critic_pos(self.state_que)
+        critic_flow = self.critic_norm(critic_flow)
         critic_flow, attn_output_weight = self.critic_atten(
-            critic_flow, self.state_que, self.state_que
+            x, self.state_que, self.state_que
         )
         critic_flow = critic_flow + x  # KF-like
         state_values = self.critic_fc(critic_flow)
 
-        actor_flow = self.actor_pre(x)
+        actor_flow = self.state_que + self.actor_pos(self.state_que)
+        actor_flow = self.actor_norm(actor_flow)
         actor_flow, attn_output_weight = self.actor_atten(
             actor_flow, self.state_que, self.state_que
         )
